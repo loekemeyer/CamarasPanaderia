@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+  body {
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(225, 29, 72, 0.08), transparent 60%),
+      #09090b;
+    font-feature-settings: "tnum" 1, "cv11" 1;
+  }
+}
+
+@layer components {
+  .card {
+    @apply relative rounded-2xl border border-white/5 bg-surface-card/90 shadow-card backdrop-blur;
+  }
+  .card-title {
+    @apply text-[13px] font-semibold uppercase tracking-[0.08em] text-zinc-400;
+  }
+  .card-sub {
+    @apply text-xs text-zinc-500;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-zinc-300;
+  }
+}
+
+.recharts-tooltip-cursor {
+  fill: rgba(255, 255, 255, 0.04);
+}

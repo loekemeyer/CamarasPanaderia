@@ -1,0 +1,78 @@
+name: retail-analytics
+
+services:
+  postgres:
+    image: timescale/timescaledb:2.17.2-pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: retail
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-retail}
+      POSTGRES_DB: retail
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U retail -d retail"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://retail:${POSTGRES_PASSWORD:-retail}@postgres:5432/retail
+      REDIS_URL: redis://redis:6379/0
+      VIDEO_SOURCE: ${VIDEO_SOURCE:-/data/sample.mp4}
+      VISION_MODE: ${VISION_MODE:-auto}
+      CAMERA_ID: ${CAMERA_ID:-cam-01}
+      CAMERA_NAME: ${CAMERA_NAME:-Caja principal}
+      TIMEZONE: ${TIMEZONE:-America/Argentina/Buenos_Aires}
+      PROCESS_FPS: ${PROCESS_FPS:-8}
+      YOLO_MODEL: ${YOLO_MODEL:-yolov8n.pt}
+      YOLO_DEVICE: ${YOLO_DEVICE:-cpu}
+      YOLO_CONFIDENCE: ${YOLO_CONFIDENCE:-0.35}
+      QUEUE_CAPACITY: ${QUEUE_CAPACITY:-8}
+      QUEUE_TARGET_WAIT_S: ${QUEUE_TARGET_WAIT_S:-180}
+      MAX_OCCUPANCY: ${MAX_OCCUPANCY:-40}
+      ACCUMULATION_ALERT_THRESHOLD: ${ACCUMULATION_ALERT_THRESHOLD:-75}
+      SEED_DEMO_HISTORY: ${SEED_DEMO_HISTORY:-true}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+    volumes:
+      - ./data:/data:ro
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "8080:80"
+
+volumes:
+  pgdata:
