@@ -10,7 +10,7 @@ import { WeeklyHeatmap } from "./components/WeeklyHeatmap";
 import { useRetailStream } from "./hooks/useWebSocket";
 import { SettingsPage, type SettingsTab } from "./pages/SettingsPage";
 import { api } from "./lib/api";
-import { fmtClock, fmtDuration, fmtInt } from "./lib/format";
+import { fmtClock, fmtDurationShort, fmtInt } from "./lib/format";
 import type { Alert, HeatmapResponse, SummaryResponse } from "./lib/types";
 
 const HEATMAP_REFRESH_MS = 5 * 60_000;
@@ -111,7 +111,7 @@ export default function App() {
   const connected = status === "open";
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 pb-8 pt-5 sm:px-6">
+    <div className="mx-auto max-w-[1600px] px-4 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.25rem,env(safe-area-inset-top))] sm:px-6">
       <header className="mb-5 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-accent to-accent-strong shadow-glow">
@@ -162,7 +162,7 @@ export default function App() {
         <SettingsPage tab={route.tab} onTab={(tab) => go({ view: "config", tab })} frameSize={metrics?.frame_size ?? null} />
       ) : (
       <main className="grid grid-cols-1 gap-4 lg:grid-cols-12">
-        <div className="lg:col-span-8 lg:row-span-2">
+        <div className="order-3 lg:order-none lg:col-span-8 lg:row-span-2">
           <CameraFeed
             cameraName={metrics?.camera_name ?? "Cámara"}
             sourceMode={metrics?.source_mode ?? "starting"}
@@ -178,7 +178,7 @@ export default function App() {
           />
         </div>
 
-        <div className="lg:col-span-4">
+        <div className="order-1 lg:order-none lg:col-span-4">
           <MetricGauge
             score={score}
             level={level}
@@ -189,7 +189,7 @@ export default function App() {
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4 lg:col-span-4">
+        <div className="order-2 grid grid-cols-2 gap-3 sm:gap-4 lg:order-none lg:col-span-4">
           <KpiTile
             label="Personas ahora"
             value={fmtInt(metrics?.people_count ?? 0)}
@@ -212,13 +212,13 @@ export default function App() {
           />
           <KpiTile
             label="Permanencia"
-            value={fmtDuration(metrics?.dwell.avg_seconds)}
+            value={fmtDurationShort(metrics?.dwell.avg_seconds)}
             icon={Clock3}
             sub="Promedio del día"
           />
         </div>
 
-        <div className="lg:col-span-8">
+        <div className="order-5 lg:order-none lg:col-span-8">
           <DemandChart
             hourly={metrics?.hourly ?? []}
             entriesToday={metrics?.today.entries ?? 0}
@@ -226,14 +226,14 @@ export default function App() {
             peopleNow={metrics?.people_count ?? 0}
           />
         </div>
-        <div className="lg:col-span-4">
+        <div className="order-6 lg:order-none lg:col-span-4">
           <DwellTimeCard dwell={metrics?.dwell ?? null} />
         </div>
 
-        <div className="lg:col-span-8">
+        <div className="order-7 lg:order-none lg:col-span-8">
           <WeeklyHeatmap data={heatmap.data} loading={heatmap.loading} error={heatmap.error} />
         </div>
-        <div className="lg:col-span-4">
+        <div className="order-4 lg:order-none lg:col-span-4">
           <AlertsPanel alerts={alerts} onAck={onAck} summary={summary.data} />
         </div>
       </main>

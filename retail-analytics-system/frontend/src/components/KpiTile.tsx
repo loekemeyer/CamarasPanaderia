@@ -18,7 +18,7 @@ export function KpiTile({ label, value, unit, sub, icon: Icon, emphasis = false 
         <Icon className={`h-4 w-4 ${emphasis ? "text-accent" : "text-zinc-500"}`} aria-hidden />
       </div>
       <div className="mt-3 flex items-baseline gap-1.5">
-        <span className="figure text-[32px] leading-none">{value}</span>
+        <span className="figure text-[26px] leading-none sm:text-[32px]">{value}</span>
         {unit && <span className="text-sm text-zinc-500">{unit}</span>}
       </div>
       {sub && <div className="mt-1 text-xs text-zinc-500">{sub}</div>}

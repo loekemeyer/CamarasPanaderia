@@ -8,6 +8,7 @@ import re
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, Response, UploadFile
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -24,7 +25,7 @@ from app.schemas.settings import (
     VideoFile,
 )
 from app.schemas.zones import ZoneCreate, ZoneOut, ZoneUpdate
-from app.services import runtime_config
+from app.services import discovery, runtime_config
 from app.services.vision_worker import probe_source
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -101,6 +102,58 @@ async def test_camera(body: CameraTest) -> CameraTestResult:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     result = await asyncio.to_thread(probe_source, source, body.rtsp_transport, settings.stream_open_timeout_s)
     return CameraTestResult(**result)
+
+
+# --- Asistente: búsqueda y conexión automática ------------------------------------
+class DiscoveryRequest(BaseModel):
+    hint: str | None = Field(default=None, max_length=64, description="IP con la que el navegador llegó al panel")
+    subnets: list[str] = Field(default_factory=list, max_length=4)
+
+
+class AutoConnectRequest(BaseModel):
+    ip: str = Field(min_length=7, max_length=64)
+    user: str = Field(default="admin", max_length=64)
+    password: str = Field(default="", max_length=128)
+    brand: str | None = None
+    channel: int = Field(default=1, ge=1, le=64)
+    port: int = Field(default=554, ge=1, le=65535)
+    transport: str = Field(default="tcp", pattern="^(tcp|udp)$")
+
+
+class ChannelsRequest(BaseModel):
+    ip: str = Field(min_length=7, max_length=64)
+    user: str = Field(default="admin", max_length=64)
+    password: str = Field(default="", max_length=128)
+    template: str = Field(min_length=1, max_length=200)
+    port: int = Field(default=554, ge=1, le=65535)
+    max_channels: int = Field(default=8, ge=1, le=32)
+
+
+@router.post("/discovery", dependencies=[Depends(require_admin)])
+async def discover_devices(body: DiscoveryRequest) -> dict:
+    return await discovery.discover(body.hint, body.subnets)
+
+
+@router.post("/camera/autoconnect", dependencies=[Depends(require_admin)])
+async def camera_autoconnect(body: AutoConnectRequest) -> dict:
+    return await asyncio.to_thread(
+        discovery.autoconnect,
+        body.ip.strip(),
+        body.user,
+        body.password,
+        body.brand,
+        body.channel,
+        body.port,
+        body.transport,
+    )
+
+
+@router.post("/camera/channels", dependencies=[Depends(require_admin)])
+async def camera_channels(body: ChannelsRequest) -> dict:
+    channels = await asyncio.to_thread(
+        discovery.scan_channels, body.ip.strip(), body.user, body.password, body.template, body.max_channels, body.port
+    )
+    return {"channels": channels}
 
 
 # --- Reglas ------------------------------------------------------------------

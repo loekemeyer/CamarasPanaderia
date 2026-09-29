@@ -207,3 +207,38 @@ export interface SystemStatus {
     last_error: string | null;
   };
 }
+
+// --- Asistente de conexión ------------------------------------------------------
+export interface DiscoveredDevice {
+  ip: string;
+  ports: number[];
+  brand: string | null;
+  brand_label: string;
+  onvif: boolean;
+  rtsp: boolean;
+  title: string | null;
+}
+
+export interface DiscoveryResult {
+  subnets: string[];
+  devices: DiscoveredDevice[];
+}
+
+export interface AutoConnectResult {
+  ok: boolean;
+  message?: string;
+  brand?: string;
+  brand_label?: string;
+  template?: string;
+  video_source?: string;
+  result?: CameraTestResult;
+  tried: { brand: string; template: string; ok: boolean; elapsed_ms: number }[];
+}
+
+export interface ChannelThumb {
+  channel: number;
+  video_source: string;
+  snapshot: string;
+  width: number;
+  height: number;
+}

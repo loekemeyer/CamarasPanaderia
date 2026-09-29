@@ -1,6 +1,7 @@
 import { Camera, Database, KeyRound, LogOut, Shapes, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { CameraSettings } from "../components/settings/CameraSettings";
+import { CameraWizard } from "../components/settings/CameraWizard";
 import { DataSettings } from "../components/settings/DataSettings";
 import { Button, NoticeLine, TextInput, errorText, type Notice } from "../components/settings/Field";
 import { RulesSettings } from "../components/settings/RulesSettings";
@@ -28,6 +29,8 @@ export function SettingsPage({ tab, onTab, frameSize }: Props) {
   const [password, setPassword] = useState("");
   const [checking, setChecking] = useState(false);
   const [notice, setNotice] = useState<Notice>(null);
+  const [cameraRev, setCameraRev] = useState(0);
+  const [manual, setManual] = useState(false);
 
   useEffect(() => {
     api
@@ -134,7 +137,20 @@ export function SettingsPage({ tab, onTab, frameSize }: Props) {
         )}
       </div>
       {notice && <NoticeLine notice={notice} />}
-      {tab === "camara" && <CameraSettings onAuthError={onAuthError} />}
+      {tab === "camara" && (
+        <>
+          <CameraWizard onAuthError={onAuthError} onApplied={() => setCameraRev((r) => r + 1)} />
+          <button
+            type="button"
+            onClick={() => setManual((m) => !m)}
+            aria-expanded={manual}
+            className="self-start font-mono text-[11px] uppercase tracking-[0.12em] text-zinc-500 transition hover:text-zinc-300"
+          >
+            {manual ? "− Ocultar configuración manual" : "+ Configuración manual y estado"}
+          </button>
+          {manual && <CameraSettings key={cameraRev} onAuthError={onAuthError} />}
+        </>
+      )}
       {tab === "zonas" && <ZoneEditor onAuthError={onAuthError} frameSize={frameSize} />}
       {tab === "reglas" && <RulesSettings onAuthError={onAuthError} />}
       {tab === "datos" && <DataSettings onAuthError={onAuthError} />}

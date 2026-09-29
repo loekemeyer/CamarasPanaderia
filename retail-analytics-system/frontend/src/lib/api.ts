@@ -1,7 +1,10 @@
 import type {
   Alert,
   CameraSettings,
+  AutoConnectResult,
   CameraTestResult,
+  ChannelThumb,
+  DiscoveryResult,
   DataStats,
   HeatmapResponse,
   RulesSettings,
@@ -90,6 +93,11 @@ export const api = {
   saveCamera: (c: CameraSettings) => put<CameraSettings>("/api/config/camera", c),
   testCamera: (video_source: string, rtsp_transport: "tcp" | "udp") =>
     post<CameraTestResult>("/api/config/camera/test", { video_source, rtsp_transport }),
+  discover: (hint: string | null, subnets: string[] = []) => post<DiscoveryResult>("/api/config/discovery", { hint, subnets }),
+  autoconnect: (body: { ip: string; user: string; password: string; brand: string | null; channel?: number; port?: number }) =>
+    post<AutoConnectResult>("/api/config/camera/autoconnect", body),
+  channels: (body: { ip: string; user: string; password: string; template: string; port?: number }) =>
+    post<{ channels: ChannelThumb[] }>("/api/config/camera/channels", body),
   rules: () => request<RulesSettings>("/api/config/rules"),
   saveRules: (r: RulesSettings) => put<RulesSettings>("/api/config/rules", r),
   videos: () => request<VideoFile[]>("/api/config/videos"),

@@ -6,6 +6,7 @@ de reglas impactan en el acto; los de cámara requieren reabrir la fuente.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from pydantic import BaseModel
@@ -61,24 +62,36 @@ def save(section: str, data: BaseModel) -> dict[str, Any]:
 
 
 # --- Credenciales RTSP -------------------------------------------------------
+_QUERY_PW = re.compile(r"(password=)([^&]*)", re.IGNORECASE)
+
+
+def _stored_password(src: str) -> str | None:
+    m = _QUERY_PW.search(src)
+    if m:
+        return m.group(2)
+    if "://" in src and "@" in src:
+        creds = src.split("://", 1)[1].rsplit("@", 1)[0]
+        if ":" in creds:
+            return creds.split(":", 1)[1]
+    return None
+
+
 def mask_source(src: str) -> str:
-    """rtsp://user:clave@host -> rtsp://user:••••••@host"""
-    if "://" not in src or "@" not in src:
-        return src
-    scheme, rest = src.split("://", 1)
-    creds, host = rest.rsplit("@", 1)
-    if ":" not in creds:
-        return src
-    user = creds.split(":", 1)[0]
-    return f"{scheme}://{user}:{MASK}@{host}"
+    """rtsp://user:clave@host -> rtsp://user:••••••@host (también ?password=… de XMEye)."""
+    out = src
+    if "://" in out and "@" in out:
+        scheme, rest = out.split("://", 1)
+        creds, host = rest.rsplit("@", 1)
+        if ":" in creds:
+            out = f"{scheme}://{creds.split(':', 1)[0]}:{MASK}@{host}"
+    return _QUERY_PW.sub(lambda m: m.group(1) + (MASK if m.group(2) else ""), out)
 
 
 def unmask_source(new: str, stored: str) -> str:
     """Si el usuario no tocó la clave enmascarada, se conserva la guardada."""
     if MASK not in new:
         return new
-    if "://" not in stored or "@" not in stored:
+    password = _stored_password(stored)
+    if password is None:
         raise ValueError("La URL contiene la clave enmascarada pero no hay una clave guardada; escribila de nuevo.")
-    stored_creds = stored.split("://", 1)[1].rsplit("@", 1)[0]
-    stored_pass = stored_creds.split(":", 1)[1] if ":" in stored_creds else ""
-    return new.replace(MASK, stored_pass, 1)
+    return new.replace(MASK, password)

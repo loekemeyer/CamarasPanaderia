@@ -54,7 +54,7 @@ export function MetricGauge({
   return (
     <Card title="Acumulación / Fluidez" subtitle="Índice compuesto de fila, espera y ocupación">
       <div className="flex flex-col items-center">
-        <svg viewBox="0 0 200 172" className="w-full max-w-[260px]" role="img" aria-label={`${Math.round(s)} de 100 puntos, ${meta.label}`}>
+        <svg viewBox="0 0 200 172" className="w-full max-w-[200px] sm:max-w-[260px]" role="img" aria-label={`${Math.round(s)} de 100 puntos, ${meta.label}`}>
           <defs>
             <linearGradient id="gauge-grad" x1="0" y1="1" x2="1" y2="0">
               <stop offset="0%" stopColor="#fda4af" />

@@ -22,3 +22,10 @@ def test_unmask_passes_new_password_through():
 def test_unmask_without_stored_credentials_fails():
     with pytest.raises(ValueError):
         unmask_source(f"rtsp://u:{MASK}@h/x", "/data/videos/a.mp4")
+
+
+def test_xmeye_query_password_masked_and_restored():
+    stored = "rtsp://192.168.1.10:554/user=admin&password=abc123&channel=1&stream=1.sdp"
+    masked = mask_source(stored)
+    assert "abc123" not in masked and MASK in masked
+    assert unmask_source(masked, stored) == stored

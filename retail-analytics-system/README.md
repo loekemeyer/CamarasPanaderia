@@ -64,13 +64,31 @@ retail-analytics-system/
 └── .env.example
 ```
 
-## Inicio rápido
+## Instalación en la PC del local (sin costo)
 
-Requisitos: Docker 24+ con Compose v2, unos 6 GB libres para las imágenes y 2 vCPU como mínimo (conviene tener 4 para correr YOLO en CPU a 8 fps).
+Hace falta una computadora que **ya esté en el local**, que quede prendida y conectada al mismo router que el grabador de las cámaras: la PC de la caja o una notebook vieja. Requisitos: 8 GB de RAM y 15 GB libres.
+
+**Windows 10/11**
+1. Descargá este repositorio como ZIP (en GitHub: *Code → Download ZIP*) y descomprimilo, por ejemplo en `C:\Panaderia`.
+2. Hacé doble clic en **`INSTALAR-WINDOWS.bat`**.
+   - Si falta Docker Desktop, lo instala. Es gratis para comercios de menos de 250 empleados. Después pide reiniciar la PC y volver a hacer doble clic.
+   - La segunda vez construye el sistema (tarda de 10 a 20 minutos la primera vez) y lo deja arrancando solo con Windows.
+   - Genera una clave de administración y deja en el escritorio el archivo **`Panel Panaderia - ACCESO.txt`**, con la dirección para el celular y la clave.
+3. Se abre el navegador en **Configuración → Cámara**. Tocá **Buscar cámaras en la red**, elegí el grabador, poné el usuario y la clave del grabador, y elegí la cámara que mira la caja.
+
+**Ubuntu/Debian** (por ejemplo, una notebook vieja): `bash scripts/instalar-linux.sh`.
+
+**Desde el celular:** con el teléfono conectado a la Wi-Fi del local, abrí la dirección `http://IP-DE-LA-PC:8080` que figura en el archivo de acceso. En el menú del navegador, *Agregar a pantalla de inicio* la deja como una app más. En el celular el panel muestra primero el índice de fila, los números del día y las alertas.
+
+> Este sistema **no reemplaza** la app de cámaras que la panadería ya usa (Hik-Connect, DMSS, iCSee, etc.): la app sigue para ver video, y este sistema agrega la analítica. La app del celular entra por la nube del fabricante, que no le entrega video a otros programas. Por eso el análisis lee el grabador directo, dentro de la red del local.
+
+## Inicio rápido (desarrollo)
+
+Requisitos: Docker 24+ con Compose v2.
 
 ```bash
 cd retail-analytics-system
-cp .env.example .env           # opcional: sin .env se usan los valores por defecto
+cp .env.example .env
 docker compose up --build
 ```
 
@@ -80,7 +98,7 @@ docker compose up --build
 | API + Swagger | http://localhost:8000/docs |
 | Salud | http://localhost:8000/api/health |
 
-**Sin cámara ni video**, `VISION_MODE=auto` detecta que no puede abrir la fuente y pasa al **modo simulado**. Ese modo genera clientes sintéticos que entran, recorren el local, hacen fila, son atendidos y salen. Además siembra 28 días de historial para que se vean el mapa de calor y los gráficos. En el visor aparece el cartel **DEMO**.
+**Sin cámara ni video**, `VISION_MODE=auto` pasa al **modo simulado**, con clientes sintéticos y 28 días de historial, y el visor muestra el cartel **DEMO**.
 
 ## Todo se configura desde la web
 
@@ -88,7 +106,8 @@ La terminal se usa una sola vez, para instalar (`docker compose up --build`). De
 
 | Sección | Qué se hace |
 |---|---|
-| **Cámara** | Armar la URL RTSP eligiendo marca, IP, usuario, clave, canal y calidad. Subir un video de prueba arrastrándolo. Usar una URL HTTP o una webcam USB. **Probar conexión** muestra un cuadro real, la resolución y los fps antes de guardar. Al guardar, el sistema reconecta en el acto y el panel de estado en vivo lo confirma. |
+| **Cámara → Conexión automática** | Busca en la red el grabador y las cámaras (ONVIF y puertos de CCTV) y reconoce la marca: Hikvision, Dahua, XMEye/iCSee, Reolink, Uniview, EZVIZ, Tapo. Con el usuario y la clave prueba sola las direcciones de video conocidas y muestra una miniatura por canal del grabador para elegir la que mira la caja. |
+| **Cámara → Configuración manual** | Armar la URL RTSP eligiendo marca, IP, usuario, clave, canal y calidad. Subir un video de prueba arrastrándolo. Usar una URL HTTP o una webcam USB. **Probar conexión** muestra un cuadro real, la resolución y los fps antes de guardar. Al guardar, el sistema reconecta en el acto y el panel de estado en vivo lo confirma. |
 | **Zonas** | Dibujar la zona de fila sobre la imagen de la cámara: clic para agregar puntos, arrastrar vértices, doble clic para quitar uno. Cada zona tiene nombre, tipo (fila o área) y capacidad. El análisis la usa apenas se guarda. |
 | **Reglas** | Capacidad de la fila, espera objetivo, ocupación de referencia, umbral y duración de las alertas, y ajuste fino del seguimiento. Se aplican en vivo, sin reiniciar. |
 | **Datos** | Cantidad de registros reales y simulados, **borrado de los datos de demo** y **exportación a CSV** para Excel (separador `;`, coma decimal). |
@@ -109,7 +128,9 @@ En **Configuración → Cámara → Video subido**, arrastrá un mp4 de un local
 
 ## Conectar una cámara de seguridad física (RTSP)
 
-1. En **Configuración → Cámara → Cámara IP (RTSP)**, elegí la marca y completá IP, puerto (554), usuario, clave y canal. Dejá **Substream**, porque YOLOv8n trabaja a 640 px y el stream principal en 4K sólo consume ancho de banda. Tocá **Armar URL**.
+Lo más fácil es el asistente: **Configuración → Cámara → Buscar cámaras en la red**. Si no encuentra nada o preferís hacerlo a mano:
+
+1. En **Configuración → Cámara → Configuración manual → Cámara IP (RTSP)**, elegí la marca y completá IP, puerto (554), usuario, clave y canal. Dejá **Substream**, porque YOLOv8n trabaja a 640 px y el stream principal en 4K sólo consume ancho de banda. Tocá **Armar URL**.
 2. Tocá **Probar conexión**. Si aparece el cuadro de la cámara, la URL es correcta. Si falla, el mensaje indica si no abrió (IP, clave o RTSP deshabilitado) o si abrió sin mandar imagen (probá con el substream o con TCP).
 3. Elegí el modo **Cámara real**. A diferencia de *Automático*, nunca cae a datos simulados: si la cámara se corta, reintenta. Tocá **Guardar y aplicar**.
 4. En **Zonas**, tocá **Actualizar cuadro** y ajustá el polígono de *Fila de caja* sobre la imagen real. Una persona cuenta "en fila" cuando el punto medio del borde inferior de su caja (los pies) cae dentro de la zona.
@@ -194,6 +215,8 @@ El índice se suaviza con una media exponencial (τ = 3 s). Los niveles son: `<3
 | GET/POST/PUT/DELETE | `/api/config/zones` | ABM de zonas |
 | GET/PUT | `/api/config/camera` · `/api/config/rules` | configuración de cámara y reglas |
 | POST | `/api/config/camera/test` | prueba de conexión (devuelve un cuadro JPEG) |
+| POST | `/api/config/discovery` | búsqueda de cámaras y grabadores en la red |
+| POST | `/api/config/camera/autoconnect` · `/api/config/camera/channels` | conexión automática y miniaturas por canal |
 | GET/POST/DELETE | `/api/config/videos` | videos de prueba (subida multipart) |
 | GET · POST | `/api/config/data/stats` · `/api/config/data/purge-simulated` | datos almacenados y borrado de demo |
 | GET | `/api/metrics/export.csv?days=30&bucket=1h` | exportación a Excel |
