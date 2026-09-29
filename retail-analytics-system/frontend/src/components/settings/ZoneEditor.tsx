@@ -2,7 +2,7 @@ import { Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type PointerEvent as RPointerEvent } from "react";
 import { api, snapshotUrl } from "../../lib/api";
 import { drawBackground } from "../../lib/scene";
-import type { ZoneRecord } from "../../lib/types";
+import type { ZoneKind, ZoneRecord } from "../../lib/types";
 import { Button, Field, NoticeLine, NumberInput, Section, Select, TextInput, errorText, type Notice } from "./Field";
 
 type Point = [number, number];
@@ -10,11 +10,42 @@ type Point = [number, number];
 interface Draft {
   id: number | null;
   name: string;
-  kind: "queue" | "area";
+  kind: ZoneKind;
   capacity: number | null;
   active: boolean;
   polygon: Point[];
 }
+
+const KINDS: Record<ZoneKind, { label: string; short: string; hint: string; fill: string; stroke: string }> = {
+  queue: {
+    label: "Fila de caja",
+    short: "Fila",
+    hint: "Quien pisa esta zona cuenta como persona en fila.",
+    fill: "rgba(244,63,94,0.06)",
+    stroke: "rgba(244,63,94,0.45)",
+  },
+  service: {
+    label: "Punto de atención",
+    short: "Atención",
+    hint: "Frente a la caja, donde se paga. Quien pasa 3 s acá cuenta como atendido; quien hizo fila y se va sin pasar, como abandono.",
+    fill: "rgba(253,164,175,0.08)",
+    stroke: "rgba(253,164,175,0.6)",
+  },
+  staff: {
+    label: "Personal (detrás del mostrador)",
+    short: "Personal",
+    hint: "Quien pisa esta zona es empleado: no cuenta como cliente. Si hay fila y nadie acá, alerta de caja sin atender.",
+    fill: "rgba(99,102,241,0.08)",
+    stroke: "rgba(129,140,248,0.6)",
+  },
+  area: {
+    label: "Área informativa",
+    short: "Área",
+    hint: "Salón, góndola o vidriera. Sólo se muestra en el visor.",
+    fill: "rgba(255,255,255,0.03)",
+    stroke: "rgba(228,228,231,0.3)",
+  },
+};
 
 const EMPTY: Draft = { id: null, name: "Nueva zona", kind: "queue", capacity: 6, active: true, polygon: [] };
 const CLOSE_PX = 12;
@@ -231,8 +262,8 @@ export function ZoneEditor({ onAuthError, frameSize }: { onAuthError: (e: unknow
                   <g key={z.id} onPointerDown={(e) => { if (!drawing) { e.stopPropagation(); select(z); } }} className="cursor-pointer">
                     <polygon
                       points={path(z.polygon)}
-                      fill={z.kind === "queue" ? "rgba(244,63,94,0.06)" : "rgba(255,255,255,0.03)"}
-                      stroke={z.kind === "queue" ? "rgba(244,63,94,0.45)" : "rgba(228,228,231,0.3)"}
+                      fill={KINDS[z.kind]?.fill ?? KINDS.area.fill}
+                      stroke={KINDS[z.kind]?.stroke ?? KINDS.area.stroke}
                       strokeDasharray="5 4"
                       strokeWidth={1.2}
                     />
@@ -312,7 +343,7 @@ export function ZoneEditor({ onAuthError, frameSize }: { onAuthError: (e: unknow
                   className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm transition ${draft?.id === z.id ? "border-accent/50 bg-accent/10 text-zinc-50" : "border-white/5 bg-black/20 text-zinc-300 hover:border-white/15"}`}
                 >
                   <span className="truncate">{z.name}</span>
-                  <span className="label">{z.kind === "queue" ? "Fila" : "Área"}{z.active ? "" : " · off"}</span>
+                  <span className="label">{KINDS[z.kind]?.short ?? z.kind}{z.active ? "" : " · off"}</span>
                 </button>
               </li>
             ))}
@@ -325,10 +356,13 @@ export function ZoneEditor({ onAuthError, frameSize }: { onAuthError: (e: unknow
               <Field label="Nombre" htmlFor="zname">
                 <TextInput id="zname" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
               </Field>
-              <Field label="Tipo" htmlFor="zkind" hint={draft.kind === "queue" ? "Quien pisa esta zona cuenta como persona en fila." : "Zona informativa (salón, góndola, vidriera)."}>
-                <Select id="zkind" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as Draft["kind"] })}>
-                  <option value="queue">Fila de caja</option>
-                  <option value="area">Área</option>
+              <Field label="Tipo" htmlFor="zkind" hint={KINDS[draft.kind].hint}>
+                <Select id="zkind" value={draft.kind} onChange={(e) => setDraft({ ...draft, kind: e.target.value as ZoneKind })}>
+                  {(Object.keys(KINDS) as ZoneKind[]).map((k) => (
+                    <option key={k} value={k}>
+                      {KINDS[k].label}
+                    </option>
+                  ))}
                 </Select>
               </Field>
               <Field label="Capacidad" htmlFor="zcap" hint="Personas que entran en la zona antes de considerarla llena.">

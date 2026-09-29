@@ -20,12 +20,13 @@ from app.schemas.settings import (
     CameraTest,
     CameraTestResult,
     DataStats,
+    NotificationSettings,
     PurgeResult,
     RulesSettings,
     VideoFile,
 )
 from app.schemas.zones import ZoneCreate, ZoneOut, ZoneUpdate
-from app.services import discovery, runtime_config
+from app.services import discovery, notifier as notifier_mod, runtime_config
 from app.services.vision_worker import probe_source
 
 router = APIRouter(prefix="/api/config", tags=["config"])
@@ -154,6 +155,81 @@ async def camera_channels(body: ChannelsRequest) -> dict:
         discovery.scan_channels, body.ip.strip(), body.user, body.password, body.template, body.max_channels, body.port
     )
     return {"channels": channels}
+
+
+# --- Avisos (Telegram) ---------------------------------------------------------------
+TOKEN_MASK = "••••"
+
+
+def _mask_token(token: str) -> str:
+    return f"{TOKEN_MASK}{token[-4:]}" if token else ""
+
+
+def _resolve_token(token: str | None) -> str:
+    if not token or token.startswith(TOKEN_MASK):
+        return settings.telegram_bot_token
+    return token.strip()
+
+
+@router.get("/notifications")
+def get_notifications(request: Request) -> dict:
+    values = runtime_config.current("notifications")
+    values["telegram_bot_token"] = _mask_token(values["telegram_bot_token"])
+    n = request.app.state.notifier
+    values["status"] = {"active": n.active, "last_error": n.last_error, "last_sent_at": n.last_sent_at}
+    return values
+
+
+@router.put("/notifications", dependencies=[Depends(require_admin)])
+def put_notifications(body: NotificationSettings, request: Request) -> dict:
+    _require_db()
+    body.telegram_bot_token = _resolve_token(body.telegram_bot_token)
+    body.telegram_chat_id = body.telegram_chat_id.strip()
+    runtime_config.save("notifications", body)
+    return get_notifications(request)
+
+
+class TelegramProbe(BaseModel):
+    token: str | None = Field(default=None, max_length=200)
+    chat_id: str | None = Field(default=None, max_length=64)
+
+
+@router.post("/notifications/detect", dependencies=[Depends(require_admin)])
+async def detect_telegram(body: TelegramProbe) -> dict:
+    token = _resolve_token(body.token)
+    try:
+        bot = await asyncio.to_thread(notifier_mod.bot_info, token)
+        chats = await asyncio.to_thread(notifier_mod.detect_chats, token)
+    except notifier_mod.TelegramError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"bot": bot, "chats": chats}
+
+
+@router.post("/notifications/test", dependencies=[Depends(require_admin)])
+async def test_telegram(body: TelegramProbe) -> dict:
+    token = _resolve_token(body.token)
+    chat_id = (body.chat_id or settings.telegram_chat_id).strip()
+    text_msg = (
+        f"✅ <b>Avisos activos</b>\nEste chat va a recibir las alertas de {notifier_mod.escape(settings.camera_name)}."
+    )
+    try:
+        await asyncio.to_thread(notifier_mod.send_message, token, chat_id, text_msg)
+    except notifier_mod.TelegramError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True}
+
+
+@router.post("/notifications/summary-now", dependencies=[Depends(require_admin)])
+async def summary_now() -> dict:
+    _require_db()
+    if not (settings.telegram_bot_token and settings.telegram_chat_id):
+        raise HTTPException(status_code=400, detail="Configurá y guardá el bot y el chat primero")
+    try:
+        text_msg = await asyncio.to_thread(notifier_mod.build_daily_summary)
+        await asyncio.to_thread(notifier_mod.send_message, settings.telegram_bot_token, settings.telegram_chat_id, text_msg)
+    except notifier_mod.TelegramError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"ok": True, "text": text_msg}
 
 
 # --- Reglas ------------------------------------------------------------------

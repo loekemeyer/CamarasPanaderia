@@ -14,12 +14,16 @@ from pydantic import BaseModel
 from app.config import settings
 from app.database import SessionLocal, db_state
 from app.models.settings import AppSetting
-from app.schemas.settings import CameraSettings, RulesSettings
+from app.schemas.settings import CameraSettings, NotificationSettings, RulesSettings
 
 logger = logging.getLogger(__name__)
 
 MASK = "••••••"
-SECTIONS: dict[str, type[BaseModel]] = {"camera": CameraSettings, "rules": RulesSettings}
+SECTIONS: dict[str, type[BaseModel]] = {
+    "camera": CameraSettings,
+    "rules": RulesSettings,
+    "notifications": NotificationSettings,
+}
 
 
 def current(section: str) -> dict[str, Any]:

@@ -21,7 +21,7 @@ def _validate_polygon(poly: list[Point]) -> list[Point]:
 
 class ZoneBase(BaseModel):
     name: str = Field(min_length=1, max_length=80)
-    kind: Literal["queue", "area"]
+    kind: Literal["queue", "area", "service", "staff"]
     polygon: list[Point]
     capacity: int | None = Field(default=None, ge=1)
     active: bool = True
@@ -38,7 +38,7 @@ class ZoneCreate(ZoneBase):
 
 class ZoneUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=80)
-    kind: Literal["queue", "area"] | None = None
+    kind: Literal["queue", "area", "service", "staff"] | None = None
     polygon: list[Point] | None = None
     capacity: int | None = Field(default=None, ge=1)
     active: bool | None = None

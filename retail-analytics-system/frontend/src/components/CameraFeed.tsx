@@ -17,6 +17,7 @@ interface CameraFeedProps {
   zones: Zone[];
   peopleCount: number;
   queueLength: number;
+  staffCount: number;
 }
 
 type BBox = [number, number, number, number];
@@ -35,31 +36,44 @@ const ANIM_MS = 220;
 
 const ROSE = "#f43f5e";
 const INK = "#e4e4e7";
+const STAFF = "#818cf8";
 
 function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-function drawZones(ctx: CanvasRenderingContext2D, zones: Zone[], w: number, h: number, queueLength: number) {
+const ZONE_STYLE: Record<Zone["kind"], { fill: string; stroke: string; dash: number[]; tag: string }> = {
+  queue: { fill: "rgba(244,63,94,0.07)", stroke: "rgba(244,63,94,0.7)", dash: [6, 4], tag: "rgba(225,29,72,0.9)" },
+  service: { fill: "rgba(253,164,175,0.08)", stroke: "rgba(253,164,175,0.75)", dash: [2, 3], tag: "rgba(159,18,57,0.92)" },
+  staff: { fill: "rgba(99,102,241,0.08)", stroke: "rgba(129,140,248,0.7)", dash: [6, 4], tag: "rgba(67,56,202,0.9)" },
+  area: { fill: "rgba(255,255,255,0.015)", stroke: "rgba(228,228,231,0.18)", dash: [3, 5], tag: "rgba(39,39,42,0.9)" },
+};
+
+function drawZones(ctx: CanvasRenderingContext2D, zones: Zone[], w: number, h: number, queueLength: number, staffCount: number) {
   for (const z of zones) {
     if (z.polygon.length < 3) continue;
-    const isQueue = z.kind === "queue";
+    const st = ZONE_STYLE[z.kind] ?? ZONE_STYLE.area;
     ctx.beginPath();
     z.polygon.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x * w, y * h) : ctx.lineTo(x * w, y * h)));
     ctx.closePath();
-    ctx.fillStyle = isQueue ? "rgba(244,63,94,0.07)" : "rgba(255,255,255,0.015)";
+    ctx.fillStyle = st.fill;
     ctx.fill();
-    ctx.setLineDash(isQueue ? [6, 4] : [3, 5]);
-    ctx.lineWidth = isQueue ? 1.5 : 1;
-    ctx.strokeStyle = isQueue ? "rgba(244,63,94,0.7)" : "rgba(228,228,231,0.18)";
+    ctx.setLineDash(st.dash);
+    ctx.lineWidth = z.kind === "area" ? 1 : 1.5;
+    ctx.strokeStyle = st.stroke;
     ctx.stroke();
     ctx.setLineDash([]);
 
     const [lx, ly] = z.polygon[0];
-    const label = isQueue ? `${z.name} · ${queueLength}${z.capacity ? `/${z.capacity}` : ""}` : z.name;
+    const label =
+      z.kind === "queue"
+        ? `${z.name} · ${queueLength}${z.capacity ? `/${z.capacity}` : ""}`
+        : z.kind === "staff"
+          ? `${z.name} · ${staffCount}`
+          : z.name;
     ctx.font = "500 11px 'IBM Plex Sans', sans-serif";
     const tw = ctx.measureText(label).width;
-    ctx.fillStyle = isQueue ? "rgba(225,29,72,0.9)" : "rgba(39,39,42,0.9)";
+    ctx.fillStyle = st.tag;
     ctx.beginPath();
     ctx.roundRect(lx * w + 6, ly * h + 6, tw + 14, 20, 6);
     ctx.fill();
@@ -73,15 +87,16 @@ function drawBox(ctx: CanvasRenderingContext2D, b: BBox, t: Track, w: number, h:
   const y1 = b[1] * h;
   const bw = (b[2] - b[0]) * w;
   const bh = (b[3] - b[1]) * h;
-  const color = t.in_queue ? ROSE : INK;
+  const kind = t.staff ? "staff" : t.in_queue ? "queue" : "customer";
+  const color = kind === "staff" ? STAFF : kind === "queue" ? ROSE : INK;
   const c = Math.min(12, bw * 0.3, bh * 0.3);
 
-  ctx.fillStyle = t.in_queue ? "rgba(244,63,94,0.10)" : "rgba(228,228,231,0.04)";
+  ctx.fillStyle = kind === "staff" ? "rgba(99,102,241,0.08)" : kind === "queue" ? "rgba(244,63,94,0.10)" : "rgba(228,228,231,0.04)";
   ctx.fillRect(x1, y1, bw, bh);
 
   ctx.strokeStyle = color;
   ctx.lineWidth = 2;
-  ctx.setLineDash(t.confirmed ? [] : [4, 3]);
+  ctx.setLineDash(t.confirmed || t.staff ? [] : [4, 3]);
   ctx.beginPath();
   // Esquinas tipo visor.
   ctx.moveTo(x1, y1 + c);
@@ -98,18 +113,18 @@ function drawBox(ctx: CanvasRenderingContext2D, b: BBox, t: Track, w: number, h:
   ctx.lineTo(x1, y1 + bh - c);
   ctx.stroke();
   ctx.setLineDash([]);
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = t.in_queue ? "rgba(244,63,94,0.35)" : "rgba(228,228,231,0.15)";
-  ctx.strokeRect(x1, y1, bw, bh);
 
-  const label = t.in_queue
-    ? `#${t.track_id} · fila ${fmtDuration(t.queue_wait_seconds)}`
-    : `#${t.track_id} · ${fmtDuration(t.dwell_seconds)}`;
+  const label =
+    kind === "staff"
+      ? "personal"
+      : kind === "queue"
+        ? `#${t.track_id} · fila ${fmtDuration(t.queue_wait_seconds)}`
+        : `#${t.track_id} · ${fmtDuration(t.dwell_seconds)}`;
   ctx.font = "500 10px 'IBM Plex Mono', monospace";
   const tw = ctx.measureText(label).width;
   const ly = Math.max(y1 - 18, 2);
   const lx = Math.max(2, Math.min(x1, w - tw - 12));
-  ctx.fillStyle = t.in_queue ? "rgba(225,29,72,0.92)" : "rgba(24,24,27,0.88)";
+  ctx.fillStyle = kind === "staff" ? "rgba(67,56,202,0.92)" : kind === "queue" ? "rgba(225,29,72,0.92)" : "rgba(24,24,27,0.88)";
   ctx.beginPath();
   ctx.roundRect(lx, ly, tw + 10, 15, 4);
   ctx.fill();
@@ -130,6 +145,7 @@ export function CameraFeed(props: CameraFeedProps) {
     zones,
     peopleCount,
     queueLength,
+    staffCount,
   } = props;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -139,6 +155,7 @@ export function CameraFeed(props: CameraFeedProps) {
   const heatCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const zonesRef = useRef(zones);
   const queueRef = useRef(queueLength);
+  const staffRef = useRef(staffCount);
   const [videoFailed, setVideoFailed] = useState(false);
   const [layers, setLayers] = useState({ boxes: true, zones: true, heat: true });
   const layersRef = useRef(layers);
@@ -146,6 +163,7 @@ export function CameraFeed(props: CameraFeedProps) {
 
   zonesRef.current = zones;
   queueRef.current = queueLength;
+  staffRef.current = staffCount;
   layersRef.current = layers;
 
   const showVideo = hasVideo && !videoFailed && sourceMode === "yolo";
@@ -175,6 +193,7 @@ export function CameraFeed(props: CameraFeedProps) {
         from = prev.from.map((v, i) => lerp(v, prev.to[i], k)) as BBox;
       }
       next.set(t.track_id, { from, to: t.bbox, start: now, track: t });
+      if (t.staff) continue;
 
       const fx = Math.floor(((t.bbox[0] + t.bbox[2]) / 2) * HEAT_W);
       const fy = Math.floor(t.bbox[3] * HEAT_H) - 1;
@@ -251,7 +270,7 @@ export function CameraFeed(props: CameraFeedProps) {
         ctx.restore();
       }
 
-      if (L.zones) drawZones(ctx, zonesRef.current, w, h, queueRef.current);
+      if (L.zones) drawZones(ctx, zonesRef.current, w, h, queueRef.current, staffRef.current);
 
       if (L.boxes) {
         for (const a of animRef.current.values()) {

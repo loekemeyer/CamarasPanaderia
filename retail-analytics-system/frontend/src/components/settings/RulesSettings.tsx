@@ -22,6 +22,7 @@ const GROUPS: { title: string; description: string; rules: RuleDef[] }[] = [
       { key: "queue_capacity", label: "Capacidad de la fila", unit: "pers.", hint: "Se usa si la zona de fila no tiene capacidad propia." },
       { key: "queue_target_wait_s", label: "Espera objetivo", unit: "min", minutes: true, step: 0.5, hint: "Espera aceptable por cliente. El doble dispara alerta de espera prolongada." },
       { key: "max_occupancy", label: "Ocupación de referencia", unit: "pers.", hint: "Personas en el local que representan el 100 % de ocupación." },
+      { key: "abandon_min_queue_s", label: "Fila mínima para abandono", unit: "s", hint: "Quien estuvo en fila al menos este tiempo y se fue sin pasar por el punto de atención cuenta como abandono." },
     ],
   },
   {
@@ -31,6 +32,7 @@ const GROUPS: { title: string; description: string; rules: RuleDef[] }[] = [
       { key: "accumulation_alert_threshold", label: "Umbral del índice", unit: "/100", hint: "Por encima de este valor empieza a contar para alertar." },
       { key: "accumulation_alert_sustain_s", label: "Sostenido durante", unit: "s", hint: "Evita alertas por picos de pocos segundos." },
       { key: "alert_cooldown_s", label: "Pausa entre alertas", unit: "min", minutes: true, step: 1, hint: "Tiempo mínimo antes de repetir una alerta del mismo tipo." },
+      { key: "unattended_alert_s", label: "Caja sin atender tras", unit: "s", hint: "Con 2 o más clientes en fila y nadie en la zona de personal durante este tiempo, se alerta." },
     ],
   },
   {

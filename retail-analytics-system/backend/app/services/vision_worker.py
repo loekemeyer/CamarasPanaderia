@@ -104,6 +104,10 @@ class TrackState:
     in_queue: bool = False
     queue_since: float | None = None
     queue_seconds: float = 0.0
+    staff: bool = False
+    served: bool = False
+    service_since: float | None = None
+    entry_hour: int | None = None
 
     def current_queue_wait(self, ts: float) -> float:
         return ts - self.queue_since if self.in_queue and self.queue_since is not None else 0.0
@@ -125,9 +129,14 @@ class MetricsEngine:
         self.day: date | None = None
         self.hourly_entries = [0] * 24
         self.hourly_exits = [0] * 24
+        self.hourly_abandons = [0] * 24
+        self.queued_today = 0
         self.dwell_counts = {k: 0 for k, *_ in DWELL_BUCKETS}
         self.dwell_sum = 0.0
         self.dwell_n = 0
+        self.staff_count = 0
+        self._recent_abandons: deque[float] = deque(maxlen=50)
+        self._unattended_since: float | None = None
 
         self.score = 0.0
         self._last_update_ts: float | None = None
@@ -146,6 +155,7 @@ class MetricsEngine:
         self._iv_score_sum = 0.0
         self._iv_entries = 0
         self._iv_exits = 0
+        self._iv_abandons = 0
         self._iv_dwell: list[float] = []
         self._iv_queue_waits: list[float] = []
         self.pending_visits: list[dict[str, Any]] = []
@@ -163,6 +173,19 @@ class MetricsEngine:
     @property
     def queue_zones(self) -> list[ZoneDef]:
         return [z for z in self.zones if z.kind == "queue"]
+
+    def _zones_of(self, kind: str) -> list[ZoneDef]:
+        return [z for z in self.zones if z.kind == kind]
+
+    @property
+    def tracks_abandonment(self) -> bool:
+        """El abandono sólo se puede medir si hay un punto de atención definido."""
+        return bool(self._zones_of("service")) and bool(self.queue_zones)
+
+    @staticmethod
+    def _foot_in(bbox: BBox, zones: list[ZoneDef]) -> bool:
+        fx, fy = (bbox[0] + bbox[2]) / 2.0, bbox[3]
+        return any(point_in_polygon(fx, fy, z.polygon) for z in zones)
 
     @property
     def queue_capacity(self) -> int:
@@ -184,8 +207,12 @@ class MetricsEngine:
         dwell_sum: float,
         dwell_n: int,
         recent_alerts: list[dict[str, Any]],
+        hourly_abandons: list[int] | None = None,
+        queued_today: int = 0,
     ) -> None:
         self.day = day
+        self.hourly_abandons = list(hourly_abandons or [0] * 24)
+        self.queued_today = int(queued_today)
         self.hourly_entries = list(hourly_entries)
         self.hourly_exits = list(hourly_exits)
         self.dwell_counts = {k: int(dwell_counts.get(k, 0)) for k, *_ in DWELL_BUCKETS}
@@ -207,6 +234,8 @@ class MetricsEngine:
             self.day = today
             self.hourly_entries = [0] * 24
             self.hourly_exits = [0] * 24
+            self.hourly_abandons = [0] * 24
+            self.queued_today = 0
             self.dwell_counts = {k: 0 for k, *_ in DWELL_BUCKETS}
             self.dwell_sum = 0.0
             self.dwell_n = 0
@@ -222,15 +251,24 @@ class MetricsEngine:
             st.queue_seconds += st.last_seen - st.queue_since
             st.in_queue = False
             st.queue_since = None
-        if not st.confirmed:
+        if not st.confirmed or st.staff:
             return
         dwell = max(st.last_seen - st.first_seen, 0.0)
         local_end = self._local(st.last_seen)
+        queued = st.queue_seconds >= self.cfg.abandon_min_queue_s
+        abandoned = queued and not st.served and self.tracks_abandonment
         if self.day == local_end.date():
             self.hourly_exits[local_end.hour] += 1
             self.dwell_counts[dwell_bucket_key(dwell)] += 1
             self.dwell_sum += dwell
             self.dwell_n += 1
+            if queued:
+                self.queued_today += 1
+            if abandoned:
+                self.hourly_abandons[local_end.hour] += 1
+        if abandoned:
+            self._iv_abandons += 1
+            self._recent_abandons.append(st.last_seen)
         self._iv_exits += 1
         self._iv_dwell.append(dwell)
         if st.queue_seconds > 0:
@@ -244,6 +282,8 @@ class MetricsEngine:
                 "ended_at": datetime.fromtimestamp(st.last_seen, timezone.utc),
                 "dwell_seconds": round(dwell, 2),
                 "queue_seconds": round(st.queue_seconds, 2),
+                "served": st.served,
+                "abandoned": abandoned,
             }
         )
 
@@ -263,6 +303,26 @@ class MetricsEngine:
             st.bbox = bbox
             st.confidence = conf
 
+            # Personal: quien pisa la zona detrás del mostrador queda marcado como empleado
+            # y deja de contar como cliente (se descuenta su ingreso si ya se había contado).
+            if not st.staff and self._foot_in(bbox, self._zones_of("staff")):
+                st.staff = True
+                if st.confirmed and st.entry_hour is not None:
+                    self.hourly_entries[st.entry_hour] = max(self.hourly_entries[st.entry_hour] - 1, 0)
+                    self._iv_entries -= 1
+                if st.in_queue:
+                    st.in_queue = False
+                    st.queue_since = None
+            if st.staff:
+                continue
+
+            if self._foot_in(bbox, self._zones_of("service")):
+                st.service_since = st.service_since or ts
+                if ts - st.service_since >= 3.0:
+                    st.served = True
+            else:
+                st.service_since = None
+
             in_q = self._in_queue(bbox)
             if in_q and not st.in_queue:
                 st.in_queue = True
@@ -279,12 +339,15 @@ class MetricsEngine:
                 local_start = self._local(st.first_seen)
                 if self.day == local_start.date():
                     self.hourly_entries[local_start.hour] += 1
+                    st.entry_hour = local_start.hour
                 self._iv_entries += 1
 
         for tid in [t for t, s in self.tracks.items() if ts - s.last_seen > self.cfg.track_exit_timeout_s]:
             self._finalize(self.tracks.pop(tid), source)
 
-        visible = [s for s in self.tracks.values() if ts - s.last_seen <= self.VISIBLE_WINDOW_S]
+        seen = [s for s in self.tracks.values() if ts - s.last_seen <= self.VISIBLE_WINDOW_S]
+        visible = [s for s in seen if not s.staff]
+        self.staff_count = len(seen) - len(visible)
         queued = [s for s in visible if s.in_queue]
         waits = [s.current_queue_wait(ts) for s in queued]
         self.people_count = len(visible)
@@ -369,6 +432,37 @@ class MetricsEngine:
         else:
             self._overflow_since = None
 
+        window = 15 * 60
+        recent = [t for t in self._recent_abandons if ts - t <= window]
+        if len(recent) >= 3 and self._cooldown_ok("abandonment", ts):
+            new.append(
+                self._emit(
+                    ts,
+                    "abandonment",
+                    "high",
+                    "Clientes que se van de la fila",
+                    f"{len(recent)} personas dejaron la fila sin ser atendidas en los últimos 15 min.",
+                    float(len(recent)),
+                )
+            )
+
+        if self._zones_of("staff") and self.queue_length >= 2 and self.staff_count == 0:
+            self._unattended_since = self._unattended_since or ts
+            waited = ts - self._unattended_since
+            if waited >= self.cfg.unattended_alert_s and self._cooldown_ok("unattended", ts):
+                new.append(
+                    self._emit(
+                        ts,
+                        "unattended",
+                        "critical",
+                        "Caja sin atender",
+                        f"{self.queue_length} clientes esperando y nadie detrás del mostrador hace {waited:.0f} s.",
+                        waited,
+                    )
+                )
+        else:
+            self._unattended_since = None
+
         long_wait = 2 * self.cfg.queue_target_wait_s
         if self.max_queue_wait >= long_wait and self._cooldown_ok("long_wait", ts):
             new.append(
@@ -415,6 +509,8 @@ class MetricsEngine:
                     "in_queue": s.in_queue,
                     "queue_wait_seconds": round(s.current_queue_wait(ts), 1),
                     "confirmed": s.confirmed,
+                    "staff": s.staff,
+                    "served": s.served,
                 }
             )
         return out
@@ -427,13 +523,26 @@ class MetricsEngine:
             "avg_queue_wait_seconds": round(self.avg_queue_wait, 1),
             "max_queue_wait_seconds": round(self.max_queue_wait, 1),
             "accumulation": {"score": round(self.score, 1), "level": accumulation_level(self.score)},
+            "staff_count": self.staff_count,
             "today": {
                 "date": self.day.isoformat() if self.day else None,
                 "entries": sum(self.hourly_entries),
                 "exits": sum(self.hourly_exits),
+                "abandons": sum(self.hourly_abandons),
+                "queued": self.queued_today,
+                "abandon_rate": round(100.0 * sum(self.hourly_abandons) / self.queued_today, 2)
+                if self.queued_today
+                else None,
+                "abandon_tracking": self.tracks_abandonment,
             },
             "hourly": [
-                {"hour": h, "label": f"{h:02d}:00", "entries": self.hourly_entries[h], "exits": self.hourly_exits[h]}
+                {
+                    "hour": h,
+                    "label": f"{h:02d}:00",
+                    "entries": self.hourly_entries[h],
+                    "exits": self.hourly_exits[h],
+                    "abandons": self.hourly_abandons[h],
+                }
                 for h in range(24)
             ],
             "dwell": self.dwell_payload(),
@@ -459,6 +568,7 @@ class MetricsEngine:
             "accumulation_score": round(self._iv_score_sum / n, 2),
             "entries": self._iv_entries,
             "exits": self._iv_exits,
+            "abandons": self._iv_abandons,
             "avg_dwell_seconds": round(float(np.mean(self._iv_dwell)), 2) if self._iv_dwell else None,
             "avg_queue_wait_seconds": round(float(np.mean(self._iv_queue_waits)), 2)
             if self._iv_queue_waits
@@ -473,6 +583,7 @@ class MetricsEngine:
         self._iv_score_sum = 0.0
         self._iv_entries = 0
         self._iv_exits = 0
+        self._iv_abandons = 0
         self._iv_dwell = []
         self._iv_queue_waits = []
         return row, visits
@@ -719,6 +830,8 @@ class SimPerson:
     wants_queue: bool
     browse_until: float = 0.0
     service_until: float = 0.0
+    queued_at: float = 0.0
+    patience: float = field(default_factory=lambda: random.uniform(90, 480))
     phase: float = field(default_factory=lambda: random.uniform(0, math.tau))
 
 
@@ -739,6 +852,11 @@ class SimulatedSource:
         self.next_id = 1
         self.last_ts: float | None = None
         self.connected = True
+        # Dos empleados detrás del mostrador (zona de personal).
+        self.staff = [
+            SimPerson(track_id=900_000 + i, x=0.74 + 0.14 * i, y=0.12, state="staff", target=(0.74 + 0.14 * i, 0.12), wants_queue=False)
+            for i in range(2)
+        ]
 
     def _slot(self, i: int) -> tuple[float, float]:
         if i < 8:
@@ -813,12 +931,20 @@ class SimulatedSource:
                 if ts >= p.browse_until:
                     if p.wants_queue:
                         p.state = "queued"
+                        p.queued_at = ts
                         self.queue.append(p)
                     else:
                         p.state = "leaving"
                         p.target = self.DOOR
             elif p.state == "queued":
-                p.target = self._slot(self.queue.index(p))
+                idx = self.queue.index(p)
+                if idx > 0 and ts - p.queued_at > p.patience:
+                    # Se cansa de esperar y se va sin ser atendido.
+                    self.queue.remove(p)
+                    p.state = "leaving"
+                    p.target = self.DOOR
+                    continue
+                p.target = self._slot(idx)
                 self._move(p, dt)
                 if self.queue and self.queue[0] is p and math.hypot(p.x - p.target[0], p.y - p.target[1]) < 0.01:
                     p.state = "serving"
@@ -834,9 +960,13 @@ class SimulatedSource:
                 if self._move(p, dt):
                     self.people.remove(p)
 
+        for st in self.staff:
+            if random.random() < 0.01:
+                st.target = (random.uniform(0.70, 0.95), random.uniform(0.08, 0.15))
+            self._move(st, dt)
         detections = [
             (p.track_id, self._bbox(p, ts), round(random.uniform(0.72, 0.96), 3))
-            for p in self.people
+            for p in [*self.people, *self.staff]
             if p.y < 1.0
         ]
         return None, detections
@@ -850,9 +980,12 @@ class SimulatedSource:
 # Worker
 # =============================================================================
 class VisionWorker:
-    def __init__(self, cfg: Settings, publish: Publisher) -> None:
+    def __init__(
+        self, cfg: Settings, publish: Publisher, on_alert: Callable[[dict[str, Any]], None] | None = None
+    ) -> None:
         self.cfg = cfg
         self.publish = publish
+        self.on_alert = on_alert
         self.engine = MetricsEngine(cfg)
         self.source: YoloSource | SimulatedSource | None = None
         self.mode = "starting"
@@ -1000,12 +1133,14 @@ class VisionWorker:
         day_end = day_start + timedelta(days=1)
         entries = [0] * 24
         exits = [0] * 24
+        abandons = [0] * 24
+        queued = 0
         counts = {k: 0 for k, *_ in DWELL_BUCKETS}
         dwell_sum, dwell_n = 0.0, 0
         try:
             with SessionLocal() as db:
                 rows = (
-                    db.query(MetricSnapshot.time, MetricSnapshot.entries, MetricSnapshot.exits)
+                    db.query(MetricSnapshot.time, MetricSnapshot.entries, MetricSnapshot.exits, MetricSnapshot.abandons)
                     .filter(
                         MetricSnapshot.camera_id == self.cfg.camera_id,
                         MetricSnapshot.time >= day_start,
@@ -1013,18 +1148,21 @@ class VisionWorker:
                     )
                     .all()
                 )
-                for t, e, x in rows:
+                for t, e, x, a in rows:
                     h = t.astimezone(tz).hour
                     entries[h] += e
                     exits[h] += x
-                for (d,) in (
-                    db.query(Visit.dwell_seconds)
+                    abandons[h] += a
+                for (d, qs) in (
+                    db.query(Visit.dwell_seconds, Visit.queue_seconds)
                     .filter(Visit.camera_id == self.cfg.camera_id, Visit.ended_at >= day_start, Visit.ended_at < day_end)
                     .all()
                 ):
                     counts[dwell_bucket_key(d)] += 1
                     dwell_sum += d
                     dwell_n += 1
+                    if qs >= self.cfg.abandon_min_queue_s:
+                        queued += 1
                 alerts = (
                     db.query(Alert)
                     .filter(Alert.camera_id == self.cfg.camera_id)
@@ -1047,7 +1185,9 @@ class VisionWorker:
                     }
                     for a in alerts
                 ]
-            self.engine.bootstrap(now_local.date(), entries, exits, counts, dwell_sum, dwell_n, recent)
+            self.engine.bootstrap(
+                now_local.date(), entries, exits, counts, dwell_sum, dwell_n, recent, abandons, queued
+            )
             logger.info("Estado del día restaurado: %s entradas, %s visitas", sum(entries), dwell_n)
         except Exception:
             logger.exception("No se pudo restaurar el estado del día")
@@ -1153,6 +1293,8 @@ class VisionWorker:
                         self.processing_fps = (len(self._fps_window) - 1) / span if span > 0 else 0.0
                     for alert in new_alerts:
                         self._persist_alert(alert)
+                        if self.on_alert:
+                            self.on_alert(alert)
                         self.publish("alerts", {"type": "alert", "camera_id": self.cfg.camera_id, "alert": alert})
                 if frame is not None:
                     self._store_frame(frame)

@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import db_state, init_db
 from app.routers import alerts, config, metrics, stream
+from app.services.notifier import notifier
 from app.services.runtime_config import load_overrides
 from app.services.vision_worker import VisionWorker
 from app.services.websocket_mgr import manager
@@ -29,15 +30,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await asyncio.to_thread(init_db)
     await asyncio.to_thread(load_overrides)
     await manager.start()
-    worker = VisionWorker(settings, manager.publish)
+    worker = VisionWorker(settings, manager.publish, on_alert=notifier.on_alert)
     app.state.worker = worker
     app.state.ws_manager = manager
+    app.state.notifier = notifier
+    notifier.start()
     worker.start()
     logger.info("Retail Analytics listo")
     try:
         yield
     finally:
         await asyncio.to_thread(worker.stop)
+        await asyncio.to_thread(notifier.stop)
         await manager.stop()
 
 

@@ -1,10 +1,12 @@
 export type AccumulationLevel = "fluido" | "moderado" | "alto" | "critico";
 export type SourceMode = "yolo" | "simulate" | "starting";
 
+export type ZoneKind = "queue" | "area" | "service" | "staff";
+
 export interface Zone {
   id: number;
   name: string;
-  kind: "queue" | "area";
+  kind: ZoneKind;
   polygon: [number, number][];
   capacity: number | null;
 }
@@ -17,6 +19,8 @@ export interface Track {
   in_queue: boolean;
   queue_wait_seconds: number;
   confirmed: boolean;
+  staff?: boolean;
+  served?: boolean;
 }
 
 export interface HourlyBucket {
@@ -24,6 +28,7 @@ export interface HourlyBucket {
   label: string;
   entries: number;
   exits: number;
+  abandons?: number;
 }
 
 export interface DwellBucket {
@@ -69,7 +74,16 @@ export interface MetricsMessage {
   avg_queue_wait_seconds: number;
   max_queue_wait_seconds: number;
   accumulation: { score: number; level: AccumulationLevel };
-  today: { date: string | null; entries: number; exits: number };
+  staff_count?: number;
+  today: {
+    date: string | null;
+    entries: number;
+    exits: number;
+    abandons?: number;
+    queued?: number;
+    abandon_rate?: number | null;
+    abandon_tracking?: boolean;
+  };
   hourly: HourlyBucket[];
   dwell: DwellStats;
   zones: Zone[];
@@ -123,6 +137,7 @@ export interface SummaryResponse {
   day: string;
   entries: number;
   exits: number;
+  abandons?: number;
   peak_people: number;
   peak_queue: number;
   avg_accumulation: number | null;
@@ -163,6 +178,18 @@ export interface RulesSettings {
   alert_cooldown_s: number;
   min_visit_seconds: number;
   track_exit_timeout_s: number;
+  abandon_min_queue_s: number;
+  unattended_alert_s: number;
+}
+
+export interface NotificationSettings {
+  telegram_enabled: boolean;
+  telegram_bot_token: string;
+  telegram_chat_id: string;
+  notify_min_severity: "medium" | "high" | "critical";
+  daily_summary_enabled: boolean;
+  daily_summary_hour: number;
+  status?: { active: boolean; last_error: string | null; last_sent_at: number | null };
 }
 
 export interface VideoFile {

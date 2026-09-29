@@ -43,6 +43,17 @@ class RulesSettings(BaseModel):
     alert_cooldown_s: int = Field(ge=10, le=7200)
     min_visit_seconds: float = Field(ge=0, le=60)
     track_exit_timeout_s: float = Field(ge=0.5, le=60)
+    abandon_min_queue_s: float = Field(default=30, ge=5, le=1800)
+    unattended_alert_s: float = Field(default=30, ge=5, le=1800)
+
+
+class NotificationSettings(BaseModel):
+    telegram_enabled: bool
+    telegram_bot_token: str = Field(default="", max_length=200)
+    telegram_chat_id: str = Field(default="", max_length=64)
+    notify_min_severity: Literal["medium", "high", "critical"]
+    daily_summary_enabled: bool
+    daily_summary_hour: int = Field(ge=0, le=23)
 
 
 class VideoFile(BaseModel):

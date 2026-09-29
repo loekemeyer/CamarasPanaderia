@@ -108,8 +108,9 @@ La terminal se usa una sola vez, para instalar (`docker compose up --build`). De
 |---|---|
 | **Cámara → Conexión automática** | Busca en la red el grabador y las cámaras (ONVIF y puertos de CCTV) y reconoce la marca: Hikvision, Dahua, XMEye/iCSee, Reolink, Uniview, EZVIZ, Tapo. Con el usuario y la clave prueba sola las direcciones de video conocidas y muestra una miniatura por canal del grabador para elegir la que mira la caja. |
 | **Cámara → Configuración manual** | Armar la URL RTSP eligiendo marca, IP, usuario, clave, canal y calidad. Subir un video de prueba arrastrándolo. Usar una URL HTTP o una webcam USB. **Probar conexión** muestra un cuadro real, la resolución y los fps antes de guardar. Al guardar, el sistema reconecta en el acto y el panel de estado en vivo lo confirma. |
-| **Zonas** | Dibujar la zona de fila sobre la imagen de la cámara: clic para agregar puntos, arrastrar vértices, doble clic para quitar uno. Cada zona tiene nombre, tipo (fila o área) y capacidad. El análisis la usa apenas se guarda. |
+| **Zonas** | Dibujar sobre la imagen 4 tipos de zona: **Fila de caja**, **Punto de atención** (donde se paga), **Personal** (detrás del mostrador) y **Área** informativa. Clic para agregar puntos, arrastrar vértices, doble clic para quitar uno. |
 | **Reglas** | Capacidad de la fila, espera objetivo, ocupación de referencia, umbral y duración de las alertas, y ajuste fino del seguimiento. Se aplican en vivo, sin reiniciar. |
+| **Avisos** | Telegram gratis, en 3 pasos: crear el bot con @BotFather, escribirle "hola" y tocar **Detectar chat**, y **Enviar prueba**. Se elige qué alertas llegan en el momento y a qué hora sale el **resumen del día**. |
 | **Datos** | Cantidad de registros reales y simulados, **borrado de los datos de demo** y **exportación a CSV** para Excel (separador `;`, coma decimal). |
 
 Lo que se configura en la web queda guardado en la tabla `app_settings` y tiene prioridad sobre `.env`.
@@ -165,6 +166,17 @@ y agregá al servicio `backend`:
         reservations:
           devices: [{ driver: nvidia, count: 1, capabilities: [gpu] }]
 ```
+
+### Zonas y qué mide cada una
+
+| Zona | Qué hace |
+|---|---|
+| Fila de caja | Cuenta quién está en fila y cuánto espera. Alimenta el índice de acumulación. |
+| Punto de atención | Quien pasa 3 s acá cuenta como **atendido**. Quien hizo fila (30 s o más, configurable) y se fue sin pasar por acá cuenta como **abandono**. Sin esta zona, los abandonos no se miden. |
+| Personal | Quien la pisa es empleado: **no cuenta como cliente**, así el conteo y la permanencia no se inflan. Si hay 2 o más clientes en fila y nadie en esta zona durante 30 s, dispara la alerta **Caja sin atender**. |
+| Área | Informativa: sólo se dibuja en el visor. |
+
+Alertas: acumulación alta, fila que supera la capacidad, espera prolongada, **abandonos** (3 o más en 15 min) y **caja sin atender**.
 
 ## Variables principales
 

@@ -58,10 +58,39 @@ def _wait_for_db() -> bool:
     return False
 
 
+DEFAULT_ZONES: list[dict] = [
+    {"name": "Fila de caja", "kind": "queue", "polygon": [[0.52, 0.30], [0.97, 0.30], [0.97, 0.78], [0.52, 0.78]], "capacity": None},
+    {"name": "Salón", "kind": "area", "polygon": [[0.02, 0.10], [0.50, 0.10], [0.50, 0.98], [0.02, 0.98]], "capacity": None},
+    {"name": "Punto de atención", "kind": "service", "polygon": [[0.68, 0.30], [0.93, 0.30], [0.93, 0.39], [0.68, 0.39]], "capacity": None},
+    {"name": "Detrás del mostrador", "kind": "staff", "polygon": [[0.66, 0.02], [0.99, 0.02], [0.99, 0.17], [0.66, 0.17]], "capacity": None},
+]
+
+
+def _seed_zones() -> None:
+    """Crea las zonas por defecto. Las de atención y personal (v2) se agregan una sola vez."""
+    from app.models.settings import AppSetting
+    from app.models.zones import Zone
+
+    with SessionLocal() as db:
+        existing = db.query(Zone).filter(Zone.camera_id == settings.camera_id).all()
+        marker = db.get(AppSetting, "zones_v2_seeded")
+        kinds = {z.kind for z in existing}
+        to_add = [
+            z
+            for z in DEFAULT_ZONES
+            if not existing or (marker is None and z["kind"] in ("service", "staff") and z["kind"] not in kinds)
+        ]
+        for z in to_add:
+            cap = settings.queue_capacity if z["kind"] == "queue" else settings.max_occupancy if z["kind"] == "area" else None
+            db.add(Zone(camera_id=settings.camera_id, name=z["name"], kind=z["kind"], polygon=z["polygon"], capacity=cap))
+        if marker is None:
+            db.add(AppSetting(key="zones_v2_seeded", value={"done": True}))
+        db.commit()
+
+
 def init_db() -> bool:
     """Crea tablas, habilita TimescaleDB si existe y siembra zonas por defecto."""
     from app import models  # noqa: F401  registra los modelos en Base.metadata
-    from app.models.zones import Zone
 
     if not _wait_for_db():
         logger.error("No se pudo conectar a PostgreSQL; el sistema sigue sin persistencia.")
@@ -76,6 +105,15 @@ def init_db() -> bool:
 
     Base.metadata.create_all(engine)
 
+    # Migraciones livianas para bases creadas por versiones anteriores.
+    with engine.begin() as conn:
+        for ddl in (
+            "ALTER TABLE metrics ADD COLUMN IF NOT EXISTS abandons integer NOT NULL DEFAULT 0",
+            "ALTER TABLE visits ADD COLUMN IF NOT EXISTS served boolean NOT NULL DEFAULT false",
+            "ALTER TABLE visits ADD COLUMN IF NOT EXISTS abandoned boolean NOT NULL DEFAULT false",
+        ):
+            conn.execute(text(ddl))
+
     if db_state["timescale"]:
         with engine.begin() as conn:
             conn.execute(
@@ -85,27 +123,7 @@ def init_db() -> bool:
                 )
             )
 
-    with SessionLocal() as db:
-        if db.query(Zone).count() == 0:
-            db.add_all(
-                [
-                    Zone(
-                        camera_id=settings.camera_id,
-                        name="Fila de caja",
-                        kind="queue",
-                        polygon=[[0.52, 0.30], [0.97, 0.30], [0.97, 0.78], [0.52, 0.78]],
-                        capacity=settings.queue_capacity,
-                    ),
-                    Zone(
-                        camera_id=settings.camera_id,
-                        name="Salón",
-                        kind="area",
-                        polygon=[[0.02, 0.10], [0.50, 0.10], [0.50, 0.98], [0.02, 0.98]],
-                        capacity=settings.max_occupancy,
-                    ),
-                ]
-            )
-            db.commit()
+    _seed_zones()
 
     db_state["ready"] = True
     logger.info("Base de datos lista (timescale=%s)", db_state["timescale"])

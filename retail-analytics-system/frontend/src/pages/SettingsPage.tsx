@@ -1,19 +1,21 @@
-import { Camera, Database, KeyRound, LogOut, Shapes, SlidersHorizontal } from "lucide-react";
+import { BellRing, Camera, Database, KeyRound, LogOut, Shapes, SlidersHorizontal } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { CameraSettings } from "../components/settings/CameraSettings";
 import { CameraWizard } from "../components/settings/CameraWizard";
 import { DataSettings } from "../components/settings/DataSettings";
 import { Button, NoticeLine, TextInput, errorText, type Notice } from "../components/settings/Field";
+import { NotificationsSettings } from "../components/settings/NotificationsSettings";
 import { RulesSettings } from "../components/settings/RulesSettings";
 import { ZoneEditor } from "../components/settings/ZoneEditor";
 import { AuthError, adminSession, api } from "../lib/api";
 
-export type SettingsTab = "camara" | "zonas" | "reglas" | "datos";
+export type SettingsTab = "camara" | "zonas" | "reglas" | "avisos" | "datos";
 
 const TABS: { key: SettingsTab; label: string; Icon: typeof Camera }[] = [
   { key: "camara", label: "Cámara", Icon: Camera },
   { key: "zonas", label: "Zonas", Icon: Shapes },
   { key: "reglas", label: "Reglas", Icon: SlidersHorizontal },
+  { key: "avisos", label: "Avisos", Icon: BellRing },
   { key: "datos", label: "Datos", Icon: Database },
 ];
 
@@ -153,6 +155,7 @@ export function SettingsPage({ tab, onTab, frameSize }: Props) {
       )}
       {tab === "zonas" && <ZoneEditor onAuthError={onAuthError} frameSize={frameSize} />}
       {tab === "reglas" && <RulesSettings onAuthError={onAuthError} />}
+      {tab === "avisos" && <NotificationsSettings onAuthError={onAuthError} />}
       {tab === "datos" && <DataSettings onAuthError={onAuthError} />}
     </div>
   );

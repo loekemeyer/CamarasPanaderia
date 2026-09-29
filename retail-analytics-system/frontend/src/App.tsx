@@ -18,7 +18,7 @@ const REST_REFRESH_MS = 60_000;
 
 type Route = { view: "panel" } | { view: "config"; tab: SettingsTab };
 
-const TAB_KEYS: SettingsTab[] = ["camara", "zonas", "reglas", "datos"];
+const TAB_KEYS: SettingsTab[] = ["camara", "zonas", "reglas", "avisos", "datos"];
 
 function parseHash(): Route {
   const m = window.location.hash.match(/^#\/configuracion(?:\/(\w+))?/);
@@ -175,6 +175,7 @@ export default function App() {
             zones={metrics?.zones ?? []}
             peopleCount={metrics?.people_count ?? 0}
             queueLength={metrics?.queue_length ?? 0}
+            staffCount={metrics?.staff_count ?? 0}
           />
         </div>
 
@@ -194,7 +195,7 @@ export default function App() {
             label="Personas ahora"
             value={fmtInt(metrics?.people_count ?? 0)}
             icon={Users}
-            sub={summary.data ? `Pico del día: ${fmtInt(summary.data.peak_people)}` : "En cuadro"}
+            sub={`${metrics?.staff_count ? `+ ${fmtInt(metrics.staff_count)} de personal · ` : ""}${summary.data ? `pico ${fmtInt(summary.data.peak_people)}` : "clientes en cuadro"}`}
           />
           <KpiTile
             label="En fila"
@@ -223,7 +224,9 @@ export default function App() {
             hourly={metrics?.hourly ?? []}
             entriesToday={metrics?.today.entries ?? 0}
             exitsToday={metrics?.today.exits ?? 0}
-            peopleNow={metrics?.people_count ?? 0}
+            abandons={metrics?.today.abandons ?? null}
+            abandonRate={metrics?.today.abandon_rate ?? null}
+            abandonTracking={metrics?.today.abandon_tracking ?? false}
           />
         </div>
         <div className="order-6 lg:order-none lg:col-span-4">

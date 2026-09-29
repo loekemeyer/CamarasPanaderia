@@ -61,6 +61,7 @@ class SummaryOut(BaseModel):
     day: date
     entries: int
     exits: int
+    abandons: int
     peak_people: int
     peak_queue: int
     avg_accumulation: float | None

@@ -10,7 +10,7 @@ import {
   YAxis,
   type TooltipProps,
 } from "recharts";
-import { fmtInt } from "../lib/format";
+import { fmtInt, fmtPct } from "../lib/format";
 import type { HourlyBucket } from "../lib/types";
 import { Card } from "./Card";
 
@@ -18,7 +18,9 @@ interface DemandChartProps {
   hourly: HourlyBucket[];
   entriesToday: number;
   exitsToday: number;
-  peopleNow: number;
+  abandons: number | null;
+  abandonRate: number | null;
+  abandonTracking: boolean;
 }
 
 const SERIES = [
@@ -53,7 +55,7 @@ function ChartTooltip({ active, payload, label }: TooltipProps<number, string>) 
   );
 }
 
-export function DemandChart({ hourly, entriesToday, exitsToday, peopleNow }: DemandChartProps) {
+export function DemandChart({ hourly, entriesToday, exitsToday, abandons, abandonRate, abandonTracking }: DemandChartProps) {
   const currentHour = new Date().getHours();
 
   const data = useMemo(() => {
@@ -84,7 +86,10 @@ export function DemandChart({ hourly, entriesToday, exitsToday, peopleNow }: Dem
         {[
           ["Ingresos hoy", fmtInt(entriesToday)],
           ["Finalizaciones", fmtInt(exitsToday)],
-          ["En el local", fmtInt(peopleNow)],
+          [
+            "Abandonos de fila",
+            abandonTracking ? `${fmtInt(abandons ?? 0)}${abandonRate != null ? ` · ${fmtPct(abandonRate)}` : ""}` : "—",
+          ],
           ["Hora pico", peak && peak.entries > 0 ? `${peak.label}:00 · ${fmtInt(peak.entries)}` : "—"],
         ].map(([k, v]) => (
           <div key={k} className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">

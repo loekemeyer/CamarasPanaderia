@@ -5,6 +5,7 @@ import type {
   CameraTestResult,
   ChannelThumb,
   DiscoveryResult,
+  NotificationSettings,
   DataStats,
   HeatmapResponse,
   RulesSettings,
@@ -98,6 +99,15 @@ export const api = {
     post<AutoConnectResult>("/api/config/camera/autoconnect", body),
   channels: (body: { ip: string; user: string; password: string; template: string; port?: number }) =>
     post<{ channels: ChannelThumb[] }>("/api/config/camera/channels", body),
+  notifications: () => request<NotificationSettings>("/api/config/notifications"),
+  saveNotifications: (n: NotificationSettings) => put<NotificationSettings>("/api/config/notifications", n),
+  detectTelegram: (token: string) =>
+    post<{ bot: { username: string; name: string }; chats: { id: string; title: string; type: string }[] }>(
+      "/api/config/notifications/detect",
+      { token },
+    ),
+  testTelegram: (token: string, chat_id: string) => post<{ ok: boolean }>("/api/config/notifications/test", { token, chat_id }),
+  summaryNow: () => post<{ ok: boolean; text: string }>("/api/config/notifications/summary-now"),
   rules: () => request<RulesSettings>("/api/config/rules"),
   saveRules: (r: RulesSettings) => put<RulesSettings>("/api/config/rules", r),
   videos: () => request<VideoFile[]>("/api/config/videos"),

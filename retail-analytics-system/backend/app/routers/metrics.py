@@ -257,6 +257,7 @@ def summary(
             """
             SELECT COALESCE(SUM(entries), 0) AS entries,
                    COALESCE(SUM(exits), 0)   AS exits,
+                   COALESCE(SUM(abandons), 0) AS abandons,
                    COALESCE(MAX(people_max), 0) AS peak_people,
                    COALESCE(MAX(queue_max), 0)  AS peak_queue,
                    AVG(accumulation_score) AS acc_avg,
@@ -286,6 +287,7 @@ def summary(
         day=d,
         entries=int(m.entries),
         exits=int(m.exits),
+        abandons=int(m.abandons),
         peak_people=int(m.peak_people),
         peak_queue=int(m.peak_queue),
         avg_accumulation=round(float(m.acc_avg), 2) if m.acc_avg is not None else None,
@@ -308,7 +310,7 @@ def export_csv(
         text(
             """
             SELECT date_bin(CAST(:bucket AS interval), time, TIMESTAMPTZ '2000-01-01') AS bucket_time,
-                   SUM(entries) AS entries, SUM(exits) AS exits,
+                   SUM(entries) AS entries, SUM(exits) AS exits, SUM(abandons) AS abandons,
                    AVG(people_count) AS people_avg, MAX(people_max) AS people_max,
                    AVG(queue_length) AS queue_avg, MAX(queue_max) AS queue_max,
                    AVG(accumulation_score) AS acc_avg, MAX(accumulation_score) AS acc_max,
@@ -330,7 +332,7 @@ def export_csv(
     w = csv.writer(buf, delimiter=";")
     w.writerow(
         [
-            "fecha_hora_local", "ingresos", "finalizaciones", "personas_prom", "personas_max",
+            "fecha_hora_local", "ingresos", "finalizaciones", "abandonos_fila", "personas_prom", "personas_max",
             "fila_prom", "fila_max", "indice_acumulacion_prom", "indice_acumulacion_max",
             "permanencia_prom_s", "origen",
         ]
@@ -339,7 +341,7 @@ def export_csv(
         w.writerow(
             [
                 r.bucket_time.astimezone(tz).strftime("%Y-%m-%d %H:%M"),
-                int(r.entries), int(r.exits), num(r.people_avg), int(r.people_max),
+                int(r.entries), int(r.exits), int(r.abandons), num(r.people_avg), int(r.people_max),
                 num(r.queue_avg), int(r.queue_max), num(r.acc_avg), num(r.acc_max),
                 num(r.dwell_avg, 1), "simulado" if r.simulated else "camara",
             ]

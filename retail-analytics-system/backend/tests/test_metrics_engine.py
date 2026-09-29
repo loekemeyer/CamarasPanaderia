@@ -100,3 +100,66 @@ def test_day_rollover_resets_daily_counters():
     eng.update(base_ts(), [])
     assert sum(eng.hourly_entries) == 0
     assert eng.dwell_n == 0
+
+
+SERVICE = ZoneDef(2, "Atención", "service", [[0.5, 0.0], [1.0, 0.0], [1.0, 0.3], [0.5, 0.3]], None)
+STAFF = ZoneDef(3, "Mostrador", "staff", [[0.0, 0.0], [0.3, 0.0], [0.3, 0.2], [0.0, 0.2]], None)
+IN_SERVICE = (0.6, 0.0, 0.7, 0.25)
+BEHIND_COUNTER = (0.05, 0.0, 0.15, 0.15)
+
+
+def make_full_engine() -> MetricsEngine:
+    eng = make_engine(abandon_min_queue_s=20, unattended_alert_s=10)
+    eng.set_zones([QUEUE, SERVICE, STAFF])
+    return eng
+
+
+def test_staff_is_not_a_customer():
+    eng = make_full_engine()
+    t0 = base_ts()
+    for i in range(0, 60):
+        eng.update(t0 + i, [(50, BEHIND_COUNTER, 0.9), (1, OUTSIDE, 0.9)])
+    assert eng.people_count == 1
+    assert eng.staff_count == 1
+    assert sum(eng.hourly_entries) == 1
+
+
+def test_customer_that_later_goes_behind_counter_is_uncounted():
+    eng = make_full_engine()
+    t0 = base_ts()
+    for i in range(0, 10):
+        eng.update(t0 + i, [(9, OUTSIDE, 0.9)])
+    assert sum(eng.hourly_entries) == 1
+    eng.update(t0 + 11, [(9, BEHIND_COUNTER, 0.9)])
+    assert sum(eng.hourly_entries) == 0
+    eng.update(t0 + 20, [])
+    assert sum(eng.hourly_exits) == 0
+
+
+def test_abandonment_vs_served():
+    eng = make_full_engine()
+    t0 = base_ts()
+    # #1 hace fila 40 s y se va sin pasar por atención -> abandono
+    # #2 hace fila 40 s y pasa 5 s por atención -> atendido
+    for i in range(0, 40):
+        eng.update(t0 + i, [(1, IN_QUEUE, 0.9), (2, IN_QUEUE, 0.9), (60, BEHIND_COUNTER, 0.9)])
+    for i in range(40, 46):
+        eng.update(t0 + i, [(2, IN_SERVICE, 0.9), (60, BEHIND_COUNTER, 0.9)])
+    eng.update(t0 + 60, [(60, BEHIND_COUNTER, 0.9)])
+    assert sum(eng.hourly_abandons) == 1
+    assert eng.queued_today == 2
+    payload = eng.metrics_payload(t0 + 60)
+    assert payload["today"]["abandon_rate"] == 50.0
+    _, visits = eng.drain_interval(t0 + 61, "camera")
+    by_id = {v["track_id"]: v for v in visits}
+    assert by_id[1]["abandoned"] and not by_id[1]["served"]
+    assert by_id[2]["served"] and not by_id[2]["abandoned"]
+
+
+def test_unattended_counter_alert():
+    eng = make_full_engine()
+    t0 = base_ts()
+    alerts = []
+    for i in range(0, 20):
+        alerts += eng.update(t0 + i, [(1, IN_QUEUE, 0.9), (2, IN_QUEUE, 0.9)])
+    assert any(a["kind"] == "unattended" for a in alerts)

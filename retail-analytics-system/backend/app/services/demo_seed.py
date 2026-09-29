@@ -51,7 +51,12 @@ def seed_demo_history(cfg: Settings) -> int:
         score = 100.0 * (0.55 * q + 0.30 * w + 0.15 * o) * rng.uniform(0.85, 1.15)
 
         dwells = [min(float(rng.lognormal(math.log(200), 0.7)), 2400.0) for _ in range(exits)]
+        # Abandono: crece con la espera (fila larga -> más gente se va).
+        abandon_p = min(0.02 + 0.10 * rho, 0.2)
+        abandons = 0
         for d in dwells:
+            abandoned = bool(rng.random() < abandon_p * 0.78)
+            abandons += int(abandoned)
             track_id += 1
             visit_rows.append(
                 {
@@ -61,7 +66,9 @@ def seed_demo_history(cfg: Settings) -> int:
                     "started_at": t - timedelta(seconds=d),
                     "ended_at": t,
                     "dwell_seconds": round(d, 2),
-                    "queue_seconds": round(max(wait * rng.uniform(0.5, 1.5), 0.0), 2),
+                    "queue_seconds": round(max(wait * rng.uniform(0.5, 1.5), 45.0 if abandoned else 0.0), 2),
+                    "served": not abandoned,
+                    "abandoned": abandoned,
                 }
             )
         metric_rows.append(
@@ -77,6 +84,7 @@ def seed_demo_history(cfg: Settings) -> int:
                 "accumulation_score": round(min(score, 100.0), 2),
                 "entries": entries,
                 "exits": exits,
+                "abandons": abandons,
                 "avg_dwell_seconds": round(float(np.mean(dwells)), 2) if dwells else None,
                 "avg_queue_wait_seconds": round(wait, 2) if wait > 0 else None,
             }

@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     accumulation_alert_threshold: int = 75
     accumulation_alert_sustain_s: int = 20
     alert_cooldown_s: int = 300
+    # Espera mínima en fila para considerar que alguien "hizo fila" (y abandonó si no fue atendido).
+    abandon_min_queue_s: float = 30.0
+    # Segundos con clientes en fila y nadie en la zona de personal antes de alertar.
+    unattended_alert_s: float = 30.0
 
     # --- Publicación / persistencia -----------------------------------------
     metrics_publish_interval_s: float = 1.0
@@ -70,6 +74,14 @@ class Settings(BaseSettings):
     videos_dir: str = "/data/videos"
     max_upload_mb: int = 4096
     stream_open_timeout_s: float = 8.0
+
+    # --- Avisos (Telegram) --------------------------------------------------
+    telegram_enabled: bool = False
+    telegram_bot_token: str = ""
+    telegram_chat_id: str = ""
+    notify_min_severity: Literal["medium", "high", "critical"] = "high"
+    daily_summary_enabled: bool = True
+    daily_summary_hour: int = 21
 
     # --- Demo ----------------------------------------------------------------
     # Sólo se aplica en modo simulado y con la tabla de métricas vacía.

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Float, Index, Integer, String
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -24,6 +24,7 @@ class MetricSnapshot(Base):
     accumulation_score: Mapped[float] = mapped_column(Float, nullable=False)
     entries: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     exits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    abandons: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     avg_dwell_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     avg_queue_wait_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
 
@@ -43,5 +44,7 @@ class Visit(Base):
     ended_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     dwell_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     queue_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    served: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
+    abandoned: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
     __table_args__ = (Index("ix_visits_camera_ended", "camera_id", "ended_at"),)
