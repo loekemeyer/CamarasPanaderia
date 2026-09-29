@@ -130,3 +130,80 @@ export interface SummaryResponse {
   avg_dwell_seconds: number | null;
   alerts: number;
 }
+
+// --- Configuración ----------------------------------------------------------
+export type VisionMode = "auto" | "yolo" | "simulate";
+
+export interface CameraSettings {
+  camera_id?: string;
+  camera_name: string;
+  video_source: string;
+  vision_mode: VisionMode;
+  rtsp_transport: "tcp" | "udp";
+  process_fps: number;
+  yolo_confidence: number;
+}
+
+export interface CameraTestResult {
+  ok: boolean;
+  message: string;
+  width: number | null;
+  height: number | null;
+  fps: number | null;
+  elapsed_ms: number;
+  snapshot: string | null;
+}
+
+export interface RulesSettings {
+  queue_capacity: number;
+  queue_target_wait_s: number;
+  max_occupancy: number;
+  accumulation_alert_threshold: number;
+  accumulation_alert_sustain_s: number;
+  alert_cooldown_s: number;
+  min_visit_seconds: number;
+  track_exit_timeout_s: number;
+}
+
+export interface VideoFile {
+  name: string;
+  path: string;
+  size_bytes: number;
+  modified_at: number;
+}
+
+export interface ZoneRecord extends Zone {
+  camera_id: string;
+  active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DataStats {
+  metrics_camera: number;
+  metrics_simulated: number;
+  visits_camera: number;
+  visits_simulated: number;
+  alerts: number;
+  oldest: string | null;
+  newest: string | null;
+}
+
+export interface SystemStatus {
+  database: { ready: boolean; timescale: boolean };
+  redis_pubsub: boolean;
+  websocket_clients: number;
+  vision: {
+    camera_id: string;
+    camera_name: string;
+    mode: SourceMode;
+    video_source: string;
+    connected: boolean;
+    has_video: boolean;
+    frame_size: [number, number] | null;
+    processing_fps: number;
+    active_tracks: number;
+    started_at: string | null;
+    last_error: string | null;
+  };
+}

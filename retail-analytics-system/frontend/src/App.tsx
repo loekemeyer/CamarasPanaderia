@@ -1,4 +1,4 @@
-import { Activity, Clock3, DoorOpen, Users, Wifi, WifiOff } from "lucide-react";
+import { Activity, Clock3, DoorOpen, LayoutDashboard, Settings, Users, Wifi, WifiOff } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertsPanel } from "./components/AlertsPanel";
 import { CameraFeed } from "./components/CameraFeed";
@@ -8,12 +8,37 @@ import { KpiTile } from "./components/KpiTile";
 import { MetricGauge } from "./components/MetricGauge";
 import { WeeklyHeatmap } from "./components/WeeklyHeatmap";
 import { useRetailStream } from "./hooks/useWebSocket";
+import { SettingsPage, type SettingsTab } from "./pages/SettingsPage";
 import { api } from "./lib/api";
 import { fmtClock, fmtDuration, fmtInt } from "./lib/format";
 import type { Alert, HeatmapResponse, SummaryResponse } from "./lib/types";
 
 const HEATMAP_REFRESH_MS = 5 * 60_000;
 const REST_REFRESH_MS = 60_000;
+
+type Route = { view: "panel" } | { view: "config"; tab: SettingsTab };
+
+const TAB_KEYS: SettingsTab[] = ["camara", "zonas", "reglas", "datos"];
+
+function parseHash(): Route {
+  const m = window.location.hash.match(/^#\/configuracion(?:\/(\w+))?/);
+  if (!m) return { view: "panel" };
+  const tab = TAB_KEYS.includes(m[1] as SettingsTab) ? (m[1] as SettingsTab) : "camara";
+  return { view: "config", tab };
+}
+
+function useHashRoute() {
+  const [route, setRoute] = useState<Route>(parseHash);
+  useEffect(() => {
+    const on = () => setRoute(parseHash());
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+  const go = useCallback((r: Route) => {
+    window.location.hash = r.view === "panel" ? "/" : `/configuracion/${r.tab}`;
+  }, []);
+  return [route, go] as const;
+}
 
 function alertKey(a: Alert): string {
   return a.id != null ? `id:${a.id}` : `${a.kind}:${a.created_at}`;
@@ -50,6 +75,7 @@ const fetchAlerts = () => api.alerts(24);
 
 export default function App() {
   const { status, latencyMs, metrics, tracks, liveAlerts, lastUpdate } = useRetailStream();
+  const [route, go] = useHashRoute();
   const heatmap = usePolling<HeatmapResponse>(fetchHeatmap, HEATMAP_REFRESH_MS);
   const summary = usePolling<SummaryResponse>(fetchSummary, REST_REFRESH_MS);
   const restAlerts = usePolling<Alert[]>(fetchAlerts, REST_REFRESH_MS);
@@ -101,6 +127,25 @@ export default function App() {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <nav className="mr-1 flex rounded-lg border border-white/10 bg-white/[0.02] p-0.5" aria-label="Principal">
+            {(
+              [
+                ["panel", "Panel", LayoutDashboard],
+                ["config", "Configuración", Settings],
+              ] as const
+            ).map(([view, label, Icon]) => (
+              <button
+                key={view}
+                type="button"
+                onClick={() => go(view === "panel" ? { view } : { view, tab: "camara" })}
+                aria-current={route.view === view ? "page" : undefined}
+                className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${route.view === view ? "bg-white/[0.08] text-zinc-50" : "text-zinc-400 hover:text-zinc-200"}`}
+              >
+                <Icon className={`h-3.5 w-3.5 ${route.view === view ? "text-accent" : ""}`} aria-hidden />
+                {label}
+              </button>
+            ))}
+          </nav>
           <span className={`chip ${connected ? "" : "border-status-warning/40 text-status-warning"}`}>
             {connected ? <Wifi className="h-3.5 w-3.5 text-status-good" aria-hidden /> : <WifiOff className="h-3.5 w-3.5" aria-hidden />}
             {connected ? "Conectado" : status === "reconnecting" ? "Reconectando…" : "Conectando…"}
@@ -113,6 +158,9 @@ export default function App() {
         </div>
       </header>
 
+      {route.view === "config" ? (
+        <SettingsPage tab={route.tab} onTab={(tab) => go({ view: "config", tab })} frameSize={metrics?.frame_size ?? null} />
+      ) : (
       <main className="grid grid-cols-1 gap-4 lg:grid-cols-12">
         <div className="lg:col-span-8 lg:row-span-2">
           <CameraFeed
@@ -189,6 +237,7 @@ export default function App() {
           <AlertsPanel alerts={alerts} onAck={onAck} summary={summary.data} />
         </div>
       </main>
+      )}
     </div>
   );
 }

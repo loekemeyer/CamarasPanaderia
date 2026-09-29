@@ -96,16 +96,16 @@ export function MetricGauge({
             />
           )}
           <circle cx={tip.x} cy={tip.y} r="6" fill="#18181b" stroke="#fafafa" strokeWidth="2" />
-          <text x={CX} y={CY + 4} textAnchor="middle" className="fill-zinc-50" style={{ font: "600 44px Inter, sans-serif" }}>
+          <text x={CX} y={CY + 4} textAnchor="middle" className="fill-zinc-50" style={{ font: "300 46px 'IBM Plex Sans', sans-serif" }}>
             {Math.round(s)}
           </text>
-          <text x={CX} y={CY + 24} textAnchor="middle" className="fill-zinc-500" style={{ font: "500 11px Inter, sans-serif" }}>
+          <text x={CX} y={CY + 24} textAnchor="middle" className="fill-zinc-500" style={{ font: "400 11px 'IBM Plex Sans', sans-serif" }}>
             de 100 puntos
           </text>
-          <text x={polar(START, R).x} y={158} textAnchor="middle" className="fill-zinc-500" style={{ font: "500 10px Inter" }}>
+          <text x={polar(START, R).x} y={158} textAnchor="middle" className="fill-zinc-500" style={{ font: "400 10px 'IBM Plex Mono', monospace" }}>
             0
           </text>
-          <text x={polar(START + SWEEP, R).x} y={158} textAnchor="middle" className="fill-zinc-500" style={{ font: "500 10px Inter" }}>
+          <text x={polar(START + SWEEP, R).x} y={158} textAnchor="middle" className="fill-zinc-500" style={{ font: "400 10px 'IBM Plex Mono', monospace" }}>
             100
           </text>
         </svg>
@@ -117,19 +117,19 @@ export function MetricGauge({
 
         <dl className="mt-4 grid w-full grid-cols-3 divide-x divide-white/5 rounded-xl border border-white/5 bg-black/20 text-center">
           <div className="px-2 py-2.5">
-            <dt className="text-[10px] uppercase tracking-wider text-zinc-500">En fila</dt>
-            <dd className="mt-0.5 text-base font-semibold tabular-nums text-zinc-100">
+            <dt className="label">En fila</dt>
+            <dd className="mt-1 text-lg font-light tabular-nums tracking-tight text-zinc-50">
               {fmtInt(queueLength)}
               <span className="text-xs font-normal text-zinc-500"> / {fmtInt(queueCapacity)}</span>
             </dd>
           </div>
           <div className="px-2 py-2.5">
-            <dt className="text-[10px] uppercase tracking-wider text-zinc-500">Espera prom.</dt>
-            <dd className="mt-0.5 text-base font-semibold tabular-nums text-zinc-100">{fmtDuration(avgWaitSeconds)}</dd>
+            <dt className="label">Espera prom.</dt>
+            <dd className="mt-1 text-lg font-light tabular-nums tracking-tight text-zinc-50">{fmtDuration(avgWaitSeconds)}</dd>
           </div>
           <div className="px-2 py-2.5">
-            <dt className="text-[10px] uppercase tracking-wider text-zinc-500">Espera máx.</dt>
-            <dd className="mt-0.5 text-base font-semibold tabular-nums text-zinc-100">{fmtDuration(maxWaitSeconds)}</dd>
+            <dt className="label">Espera máx.</dt>
+            <dd className="mt-1 text-lg font-light tabular-nums tracking-tight text-zinc-50">{fmtDuration(maxWaitSeconds)}</dd>
           </div>
         </dl>
       </div>

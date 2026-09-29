@@ -88,8 +88,8 @@ export function DemandChart({ hourly, entriesToday, exitsToday, peopleNow }: Dem
           ["Hora pico", peak && peak.entries > 0 ? `${peak.label}:00 · ${fmtInt(peak.entries)}` : "—"],
         ].map(([k, v]) => (
           <div key={k} className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">
-            <div className="text-[10px] uppercase tracking-wider text-zinc-500">{k}</div>
-            <div className="text-lg font-semibold tabular-nums text-zinc-100">{v}</div>
+            <div className="label">{k}</div>
+            <div className="mt-0.5 text-xl font-light tabular-nums tracking-tight text-zinc-50">{v}</div>
           </div>
         ))}
       </div>

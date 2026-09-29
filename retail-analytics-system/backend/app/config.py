@@ -64,6 +64,13 @@ class Settings(BaseSettings):
     stream_max_width: int = 960
     stream_fps: float = 10.0
 
+    # --- Configuración web -------------------------------------------------
+    # Si se define, la web pide esta clave para guardar cambios de configuración.
+    admin_password: str = ""
+    videos_dir: str = "/data/videos"
+    max_upload_mb: int = 4096
+    stream_open_timeout_s: float = 8.0
+
     # --- Demo ----------------------------------------------------------------
     # Sólo se aplica en modo simulado y con la tabla de métricas vacía.
     seed_demo_history: bool = True

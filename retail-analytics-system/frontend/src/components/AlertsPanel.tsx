@@ -30,9 +30,9 @@ export function AlertsPanel({ alerts, onAck, summary }: AlertsPanelProps) {
         </span>
       }
     >
-      <ul className="max-h-[300px] flex-1 space-y-2 overflow-y-auto pr-1">
+      <ul className={`flex flex-1 ${alerts.length ? "max-h-[300px]" : ""} flex-col gap-2 overflow-y-auto pr-1`}>
         {alerts.length === 0 && (
-          <li className="rounded-lg border border-dashed border-white/10 px-3 py-6 text-center text-sm text-zinc-500">
+          <li className="flex flex-1 items-center justify-center rounded-lg border border-dashed border-white/10 px-3 py-6 text-center text-sm text-zinc-500">
             Sin alertas. La operación está fluida.
           </li>
         )}
@@ -78,8 +78,8 @@ export function AlertsPanel({ alerts, onAck, summary }: AlertsPanelProps) {
           ["Índice prom.", summary?.avg_accumulation == null ? "—" : fmtInt(summary.avg_accumulation)],
         ].map(([k, v]) => (
           <div key={k} className="px-2 py-2.5">
-            <dt className="text-[10px] uppercase tracking-wider text-zinc-500">{k}</dt>
-            <dd className="mt-0.5 text-base font-semibold tabular-nums text-zinc-100">{v}</dd>
+            <dt className="label">{k}</dt>
+            <dd className="mt-1 text-lg font-light tabular-nums tracking-tight text-zinc-50">{v}</dd>
           </div>
         ))}
       </dl>

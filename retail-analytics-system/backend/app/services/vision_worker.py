@@ -481,13 +481,70 @@ class MetricsEngine:
 # =============================================================================
 # Fuentes de detección
 # =============================================================================
+def open_capture(target: Any, is_webcam: bool, timeout_ms: int) -> Any:
+    import cv2
+
+    if is_webcam:
+        return cv2.VideoCapture(target)
+    params = [cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, timeout_ms, cv2.CAP_PROP_READ_TIMEOUT_MSEC, timeout_ms]
+    return cv2.VideoCapture(target, cv2.CAP_FFMPEG, params)
+
+
+def probe_source(source: str, rtsp_transport: str, timeout_s: float) -> dict[str, Any]:
+    """Abre la fuente, lee un cuadro y devuelve resolución, fps y un JPEG de muestra."""
+    import base64
+
+    import cv2
+
+    started = time.time()
+    src = source.strip()
+    is_webcam = src.isdigit()
+    if src.lower().startswith("rtsp"):
+        os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{rtsp_transport}"
+    if not is_webcam and "://" not in src and not os.path.isfile(src):
+        return {"ok": False, "message": f"No existe el archivo {src}", "elapsed_ms": 0}
+    cap = open_capture(int(src) if is_webcam else src, is_webcam, int(timeout_s * 1000))
+    try:
+        if not cap.isOpened():
+            return {
+                "ok": False,
+                "message": "No se pudo abrir la fuente. Revisá IP, puerto, usuario/clave y que RTSP esté habilitado.",
+                "elapsed_ms": int((time.time() - started) * 1000),
+            }
+        ok, frame = cap.read()
+        if not ok or frame is None:
+            return {
+                "ok": False,
+                "message": "La conexión abrió pero no llegó ningún cuadro (probá el substream o transporte TCP).",
+                "elapsed_ms": int((time.time() - started) * 1000),
+            }
+        h, w = frame.shape[:2]
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        preview = frame
+        if w > 960:
+            preview = cv2.resize(frame, (960, int(h * 960 / w)), interpolation=cv2.INTER_AREA)
+        _, buf = cv2.imencode(".jpg", preview, [int(cv2.IMWRITE_JPEG_QUALITY), 75])
+        return {
+            "ok": True,
+            "message": "Conexión correcta",
+            "width": w,
+            "height": h,
+            "fps": round(fps, 2) if fps and fps < 240 else None,
+            "elapsed_ms": int((time.time() - started) * 1000),
+            "snapshot": "data:image/jpeg;base64," + base64.b64encode(buf.tobytes()).decode(),
+        }
+    finally:
+        cap.release()
+
+
 class FrameGrabber:
     """Lectura de video con soporte mp4 (loop, ritmo real) y streams en vivo (reconexión)."""
 
-    def __init__(self, source: str, rtsp_transport: str, backoff_max_s: float) -> None:
+    def __init__(self, source: str, rtsp_transport: str, backoff_max_s: float, open_timeout_s: float = 8.0) -> None:
         import cv2
 
         self.cv2 = cv2
+        self.open_timeout_ms = int(open_timeout_s * 1000)
         self.source = source
         self.backoff_max_s = backoff_max_s
         self.is_file = os.path.isfile(source)
@@ -510,7 +567,7 @@ class FrameGrabber:
     def _open(self) -> bool:
         cv2 = self.cv2
         target: Any = int(self.source) if self.is_webcam else self.source
-        cap = cv2.VideoCapture(target) if self.is_webcam else cv2.VideoCapture(target, cv2.CAP_FFMPEG)
+        cap = open_capture(target, self.is_webcam, self.open_timeout_ms)
         if not cap.isOpened():
             cap.release()
             return False
@@ -590,7 +647,9 @@ class YoloSource:
         from ultralytics import YOLO
 
         self.cfg = cfg
-        self.grabber = FrameGrabber(cfg.video_source, cfg.rtsp_transport, cfg.reconnect_backoff_max_s)
+        self.grabber = FrameGrabber(
+            cfg.video_source, cfg.rtsp_transport, cfg.reconnect_backoff_max_s, cfg.stream_open_timeout_s
+        )
         self.grabber.start()
         logger.info("Cargando modelo %s en %s", cfg.yolo_model, cfg.yolo_device)
         self.model = YOLO(cfg.yolo_model)
@@ -801,12 +860,14 @@ class VisionWorker:
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._reload_zones = threading.Event()
+        self._restart_source = threading.Event()
 
         self._jpeg_lock = threading.Lock()
         self._latest_jpeg: bytes | None = None
         self._jpeg_seq = 0
         self.frame_size: tuple[int, int] | None = None
 
+        self._rebootstrap = False
         self.started_at: float | None = None
         self.last_error: str | None = None
         self.processing_fps = 0.0
@@ -830,6 +891,13 @@ class VisionWorker:
     def request_zone_reload(self) -> None:
         self._reload_zones.set()
 
+    def request_source_restart(self) -> None:
+        """Reabre la fuente con la configuración vigente (cambio de cámara/modo desde la web)."""
+        self._restart_source.set()
+
+    def request_rebootstrap(self) -> None:
+        self._rebootstrap = True
+
     def latest_jpeg(self) -> tuple[int, bytes | None]:
         with self._jpeg_lock:
             return self._jpeg_seq, self._latest_jpeg
@@ -852,11 +920,9 @@ class VisionWorker:
         }
 
     def _redacted_source(self) -> str:
-        src = self.cfg.video_source
-        if "://" in src and "@" in src:
-            scheme, rest = src.split("://", 1)
-            return f"{scheme}://***@{rest.split('@', 1)[1]}"
-        return src
+        from app.services.runtime_config import mask_source
+
+        return mask_source(self.cfg.video_source)
 
     # --------------------------------------------------------------- fuente
     def _open_source(self) -> YoloSource | SimulatedSource:
@@ -874,8 +940,27 @@ class VisionWorker:
                     return SimulatedSource(self.cfg)
                 logger.error("No se pudo iniciar YOLO: %s. Reintento en %.0f s", self.last_error, backoff)
                 self._stop.wait(backoff)
+                if self._restart_source.is_set():
+                    # Llegó otra configuración desde la web: se atiende en el próximo ciclo.
+                    return SimulatedSource(self.cfg)
                 backoff = min(backoff * 2, self.cfg.reconnect_backoff_max_s)
         return SimulatedSource(self.cfg)
+
+    def _switch_source(self) -> None:
+        logger.info("Reabriendo fuente de video: %s (%s)", self._redacted_source(), self.cfg.vision_mode)
+        # Se cierra lo pendiente del intervalo con la fuente anterior.
+        self._persist(time.time())
+        if self.source:
+            self.source.close()
+        self.engine.tracks.clear()
+        with self._jpeg_lock:
+            self._latest_jpeg = None
+        self.last_error = None
+        self.mode = "starting"
+        self.source = self._open_source()
+        self.mode = self.source.name
+        self.frame_size = (1280, 720) if self.mode == "simulate" else None
+        logger.info("Fuente activa en modo %s", self.mode)
 
     def _data_source(self) -> str:
         return "simulated" if self.mode == "simulate" else "camera"
@@ -1051,6 +1136,12 @@ class VisionWorker:
                 if self._reload_zones.is_set():
                     self._reload_zones.clear()
                     self._load_zones()
+                if self._rebootstrap:
+                    self._rebootstrap = False
+                    self._bootstrap_today()
+                if self._restart_source.is_set():
+                    self._restart_source.clear()
+                    self._switch_source()
 
                 frame, detections = self.source.read()
                 ts = time.time()

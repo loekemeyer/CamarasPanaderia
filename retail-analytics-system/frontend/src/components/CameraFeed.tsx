@@ -1,6 +1,7 @@
 import { Flame, Scan, Shapes, Video, VideoOff } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { streamUrl } from "../lib/api";
+import { drawBackground } from "../lib/scene";
 import { fmtClock, fmtDec1, fmtDuration } from "../lib/format";
 import type { SourceMode, Track, Zone } from "../lib/types";
 
@@ -39,68 +40,6 @@ function lerp(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
-function drawBackground(ctx: CanvasRenderingContext2D, w: number, h: number) {
-  const g = ctx.createLinearGradient(0, 0, 0, h);
-  g.addColorStop(0, "#111114");
-  g.addColorStop(1, "#0b0b0d");
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, w, h);
-
-  // Piso en perspectiva.
-  ctx.strokeStyle = "rgba(255,255,255,0.035)";
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 16; i++) {
-    const x = (i / 16) * w;
-    ctx.beginPath();
-    ctx.moveTo(w / 2 + (x - w / 2) * 0.55, h * 0.12);
-    ctx.lineTo(x, h);
-    ctx.stroke();
-  }
-  for (let i = 0; i <= 10; i++) {
-    const y = h * 0.12 + (h * 0.88 * (i / 10)) ** 1.0;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
-  }
-
-  // Góndolas.
-  ctx.fillStyle = "rgba(255,255,255,0.045)";
-  ctx.strokeStyle = "rgba(255,255,255,0.08)";
-  const shelves: [number, number, number, number][] = [
-    [0.06, 0.2, 0.38, 0.05],
-    [0.06, 0.42, 0.38, 0.05],
-    [0.06, 0.64, 0.38, 0.05],
-  ];
-  for (const [x, y, sw, sh] of shelves) {
-    ctx.beginPath();
-    ctx.roundRect(x * w, y * h, sw * w, sh * h, 4);
-    ctx.fill();
-    ctx.stroke();
-  }
-
-  // Mostrador / caja.
-  ctx.fillStyle = "rgba(244,63,94,0.10)";
-  ctx.strokeStyle = "rgba(244,63,94,0.35)";
-  ctx.beginPath();
-  ctx.roundRect(0.7 * w, 0.18 * h, 0.26 * w, 0.07 * h, 6);
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.font = "600 11px Inter, sans-serif";
-  ctx.fillStyle = "rgba(228,228,231,0.45)";
-  ctx.fillText("CAJA", 0.71 * w + 8, 0.18 * h + 18);
-  ctx.fillText("ENTRADA", 0.04 * w, h - 10);
-
-  // Puerta.
-  ctx.strokeStyle = "rgba(228,228,231,0.25)";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(0.03 * w, h - 2);
-  ctx.lineTo(0.2 * w, h - 2);
-  ctx.stroke();
-}
-
 function drawZones(ctx: CanvasRenderingContext2D, zones: Zone[], w: number, h: number, queueLength: number) {
   for (const z of zones) {
     if (z.polygon.length < 3) continue;
@@ -118,7 +57,7 @@ function drawZones(ctx: CanvasRenderingContext2D, zones: Zone[], w: number, h: n
 
     const [lx, ly] = z.polygon[0];
     const label = isQueue ? `${z.name} · ${queueLength}${z.capacity ? `/${z.capacity}` : ""}` : z.name;
-    ctx.font = "600 11px Inter, sans-serif";
+    ctx.font = "500 11px 'IBM Plex Sans', sans-serif";
     const tw = ctx.measureText(label).width;
     ctx.fillStyle = isQueue ? "rgba(225,29,72,0.9)" : "rgba(39,39,42,0.9)";
     ctx.beginPath();
@@ -166,7 +105,7 @@ function drawBox(ctx: CanvasRenderingContext2D, b: BBox, t: Track, w: number, h:
   const label = t.in_queue
     ? `#${t.track_id} · fila ${fmtDuration(t.queue_wait_seconds)}`
     : `#${t.track_id} · ${fmtDuration(t.dwell_seconds)}`;
-  ctx.font = "600 10px 'JetBrains Mono', monospace";
+  ctx.font = "500 10px 'IBM Plex Mono', monospace";
   const tw = ctx.measureText(label).width;
   const ly = Math.max(y1 - 18, 2);
   const lx = Math.max(2, Math.min(x1, w - tw - 12));
@@ -425,7 +364,7 @@ export function CameraFeed(props: CameraFeedProps) {
         <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {telemetry.map(([k, v]) => (
             <div key={k} className="rounded-lg border border-white/5 bg-black/20 px-3 py-2">
-              <dt className="text-[10px] uppercase tracking-wider text-zinc-500">{k}</dt>
+              <dt className="label">{k}</dt>
               <dd className="font-mono text-sm text-zinc-100">{v}</dd>
             </div>
           ))}

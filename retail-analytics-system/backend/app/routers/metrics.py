@@ -1,6 +1,8 @@
 """Endpoints de métricas históricas y en vivo."""
 from __future__ import annotations
 
+import csv
+import io
 import time
 from datetime import date, datetime, timedelta
 from statistics import median
@@ -8,6 +10,7 @@ from typing import Literal
 from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -289,4 +292,61 @@ def summary(
         max_accumulation=round(float(m.acc_max), 2) if m.acc_max is not None else None,
         avg_dwell_seconds=round(float(avg_dwell), 1) if avg_dwell is not None else None,
         alerts=int(alerts or 0),
+    )
+
+
+@router.get("/export.csv")
+def export_csv(
+    days: int = Query(30, ge=1, le=365),
+    bucket: Literal["5m", "15m", "1h"] = "1h",
+    camera_id: str | None = None,
+    db: Session = Depends(get_db),
+) -> StreamingResponse:
+    """Descarga de métricas agregadas para Excel (separador ';', coma decimal)."""
+    _require_db()
+    rows = db.execute(
+        text(
+            """
+            SELECT date_bin(CAST(:bucket AS interval), time, TIMESTAMPTZ '2000-01-01') AS bucket_time,
+                   SUM(entries) AS entries, SUM(exits) AS exits,
+                   AVG(people_count) AS people_avg, MAX(people_max) AS people_max,
+                   AVG(queue_length) AS queue_avg, MAX(queue_max) AS queue_max,
+                   AVG(accumulation_score) AS acc_avg, MAX(accumulation_score) AS acc_max,
+                   AVG(avg_dwell_seconds) AS dwell_avg, bool_or(source = 'simulated') AS simulated
+            FROM metrics
+            WHERE camera_id = :camera_id AND time >= now() - make_interval(days => :days)
+            GROUP BY 1 ORDER BY 1
+            """
+        ),
+        {"bucket": BUCKETS[bucket], "camera_id": camera_id or settings.camera_id, "days": days},
+    ).all()
+    tz = ZoneInfo(settings.timezone)
+
+    def num(v: float | None, digits: int = 2) -> str:
+        return "" if v is None else f"{float(v):.{digits}f}".replace(".", ",")
+
+    buf = io.StringIO()
+    buf.write("\ufeff")  # BOM para que Excel detecte UTF-8
+    w = csv.writer(buf, delimiter=";")
+    w.writerow(
+        [
+            "fecha_hora_local", "ingresos", "finalizaciones", "personas_prom", "personas_max",
+            "fila_prom", "fila_max", "indice_acumulacion_prom", "indice_acumulacion_max",
+            "permanencia_prom_s", "origen",
+        ]
+    )
+    for r in rows:
+        w.writerow(
+            [
+                r.bucket_time.astimezone(tz).strftime("%Y-%m-%d %H:%M"),
+                int(r.entries), int(r.exits), num(r.people_avg), int(r.people_max),
+                num(r.queue_avg), int(r.queue_max), num(r.acc_avg), num(r.acc_max),
+                num(r.dwell_avg, 1), "simulado" if r.simulated else "camara",
+            ]
+        )
+    filename = f"metricas_{camera_id or settings.camera_id}_{days}d.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )

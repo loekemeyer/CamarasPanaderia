@@ -60,8 +60,10 @@ services:
       ACCUMULATION_ALERT_THRESHOLD: ${ACCUMULATION_ALERT_THRESHOLD:-75}
       SEED_DEMO_HISTORY: ${SEED_DEMO_HISTORY:-true}
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      VIDEOS_DIR: /data/videos
     volumes:
-      - ./data:/data:ro
+      - ./data:/data
     ports:
       - "8000:8000"
 

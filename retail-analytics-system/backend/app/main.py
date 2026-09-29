@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import db_state, init_db
 from app.routers import alerts, config, metrics, stream
+from app.services.runtime_config import load_overrides
 from app.services.vision_worker import VisionWorker
 from app.services.websocket_mgr import manager
 
@@ -26,6 +27,7 @@ logger = logging.getLogger("retail")
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await asyncio.to_thread(init_db)
+    await asyncio.to_thread(load_overrides)
     await manager.start()
     worker = VisionWorker(settings, manager.publish)
     app.state.worker = worker

@@ -82,52 +82,49 @@ docker compose up --build
 
 **Sin cámara ni video**, `VISION_MODE=auto` detecta que no puede abrir la fuente y pasa al **modo simulado**. Ese modo genera clientes sintéticos que entran, recorren el local, hacen fila, son atendidos y salen. Además siembra 28 días de historial para que se vean el mapa de calor y los gráficos. En el visor aparece el cartel **DEMO**.
 
-### Probar con un video mp4
+## Todo se configura desde la web
 
-1. Copiá un video de un local con personas en `data/sample.mp4`. Sirve cualquier clip de cámara cenital o de 3/4, por ejemplo de un banco de videos libres.
-2. Levantá todo con `docker compose up --build`. El archivo se reproduce en loop y a velocidad real.
+La terminal se usa una sola vez, para instalar (`docker compose up --build`). Después todo se opera desde **Configuración**, en el dashboard (http://localhost:8080/#/configuracion):
 
-> El historial demo se siembra **sólo** cuando la fuente es simulada y la tabla `metrics` está vacía. Todas las filas sintéticas tienen `source = 'simulated'`, así que se pueden purgar sin tocar datos reales:
-> `DELETE FROM metrics WHERE source='simulated'; DELETE FROM visits WHERE source='simulated';`
+| Sección | Qué se hace |
+|---|---|
+| **Cámara** | Armar la URL RTSP eligiendo marca, IP, usuario, clave, canal y calidad. Subir un video de prueba arrastrándolo. Usar una URL HTTP o una webcam USB. **Probar conexión** muestra un cuadro real, la resolución y los fps antes de guardar. Al guardar, el sistema reconecta en el acto y el panel de estado en vivo lo confirma. |
+| **Zonas** | Dibujar la zona de fila sobre la imagen de la cámara: clic para agregar puntos, arrastrar vértices, doble clic para quitar uno. Cada zona tiene nombre, tipo (fila o área) y capacidad. El análisis la usa apenas se guarda. |
+| **Reglas** | Capacidad de la fila, espera objetivo, ocupación de referencia, umbral y duración de las alertas, y ajuste fino del seguimiento. Se aplican en vivo, sin reiniciar. |
+| **Datos** | Cantidad de registros reales y simulados, **borrado de los datos de demo** y **exportación a CSV** para Excel (separador `;`, coma decimal). |
+
+Lo que se configura en la web queda guardado en la tabla `app_settings` y tiene prioridad sobre `.env`.
+
+### Clave de administración
+
+Definí `ADMIN_PASSWORD` en `.env` antes del primer arranque. La web la pide para entrar a Configuración, y la API la exige para cualquier cambio (encabezado `X-Admin-Password`). Si queda vacía, cualquiera que llegue a la IP del equipo puede cambiar la cámara o borrar datos. Dejala vacía sólo en una red aislada.
+
+> La clave de la cámara se guarda en texto plano en la base de datos, y la web la muestra enmascarada (`••••••`). Conviene crear en el NVR un usuario **sólo de visualización** para este sistema.
+
+### Probar con un video
+
+En **Configuración → Cámara → Video subido**, arrastrá un mp4 de un local con personas. Después elegí el modo **Cámara real**, tocá **Probar conexión** y **Guardar y aplicar**. El video se reproduce en loop y a velocidad real.
+
+> El historial demo se siembra **sólo** cuando la fuente es simulada y la tabla `metrics` está vacía. Todas las filas sintéticas quedan marcadas y se borran desde **Datos → Borrar datos simulados**, sin tocar los datos de la cámara.
 
 ## Conectar una cámara de seguridad física (RTSP)
 
-1. **Obtené la URL RTSP** del NVR o de la cámara. Formatos habituales:
+1. En **Configuración → Cámara → Cámara IP (RTSP)**, elegí la marca y completá IP, puerto (554), usuario, clave y canal. Dejá **Substream**, porque YOLOv8n trabaja a 640 px y el stream principal en 4K sólo consume ancho de banda. Tocá **Armar URL**.
+2. Tocá **Probar conexión**. Si aparece el cuadro de la cámara, la URL es correcta. Si falla, el mensaje indica si no abrió (IP, clave o RTSP deshabilitado) o si abrió sin mandar imagen (probá con el substream o con TCP).
+3. Elegí el modo **Cámara real**. A diferencia de *Automático*, nunca cae a datos simulados: si la cámara se corta, reintenta. Tocá **Guardar y aplicar**.
+4. En **Zonas**, tocá **Actualizar cuadro** y ajustá el polígono de *Fila de caja* sobre la imagen real. Una persona cuenta "en fila" cuando el punto medio del borde inferior de su caja (los pies) cae dentro de la zona.
+5. En **Datos**, borrá los datos simulados para que el historial refleje sólo el local.
 
-   | Marca | URL |
-   |---|---|
-   | Hikvision | `rtsp://usuario:clave@IP:554/Streaming/Channels/101` (102 = substream) |
-   | Dahua | `rtsp://usuario:clave@IP:554/cam/realmonitor?channel=1&subtype=0` |
-   | Reolink | `rtsp://usuario:clave@IP:554/h264Preview_01_main` |
-   | Uniview | `rtsp://usuario:clave@IP:554/unicast/c1/s0/live` |
-   | Genérica ONVIF | la que figure en ONVIF Device Manager, en *Live video* |
+Formatos de URL que arma la web:
 
-2. **Usá el substream** (720p o menos). YOLOv8n trabaja a 640 px, así que el stream principal en 4K sólo consume ancho de banda y CPU.
-3. **Verificá la URL desde la máquina que corre Docker**:
-   ```bash
-   ffprobe -rtsp_transport tcp "rtsp://usuario:clave@192.168.1.64:554/Streaming/Channels/102"
-   ```
-   Si falla, revisá usuario y clave, que el puerto 554 esté abierto en el firewall y que RTSP esté habilitado en la cámara.
-4. **Configurá `.env`**:
-   ```env
-   VIDEO_SOURCE=rtsp://usuario:clave@192.168.1.64:554/Streaming/Channels/102
-   VISION_MODE=yolo          # con "yolo" reintenta con backoff y no cae al simulador
-   CAMERA_NAME=Caja principal
-   RTSP_TRANSPORT=tcp        # udp si la red es muy estable y querés menos latencia
-   SEED_DEMO_HISTORY=false
-   ```
-   Si la clave tiene caracteres especiales, codificalos en URL (`@` → `%40`, `#` → `%23`).
-5. **Reiniciá el backend** con `docker compose up -d --build backend`. La URL se muestra enmascarada en `/api/config/system`.
-6. **Calibrá la zona de fila.** Las zonas son polígonos en coordenadas normalizadas (0-1) sobre el cuadro, y una persona cuenta "en fila" cuando **el punto medio del borde inferior** de su caja cae dentro de la zona `queue`:
-   ```bash
-   curl http://localhost:8000/api/config/zones                 # listar
-   curl -X PUT http://localhost:8000/api/config/zones/1 \
-        -H 'Content-Type: application/json' \
-        -d '{"polygon": [[0.55,0.35],[0.95,0.35],[0.95,0.85],[0.55,0.85]], "capacity": 6}'
-   ```
-   Para ubicar los puntos, bajá un cuadro con `curl -o frame.jpg http://localhost:8000/api/stream/snapshot.jpg`, medilo en cualquier editor de imágenes y dividí cada coordenada por el ancho o el alto. El worker recarga las zonas sin reiniciar.
+| Marca | Ruta |
+|---|---|
+| Hikvision / HiLook | `/Streaming/Channels/101` (principal) · `102` (substream) |
+| Dahua / Imou | `/cam/realmonitor?channel=1&subtype=0` · `subtype=1` |
+| Reolink | `/h264Preview_01_main` · `_sub` |
+| Uniview | `/unicast/c1/s0/live` · `s1` |
 
-**La red del contenedor tiene que llegar a la cámara.** En Linux, si la cámara está en la LAN, el bridge por defecto suele alcanzar. Si no, agregá `network_mode: host` al servicio `backend`.
+**La red del contenedor tiene que llegar a la cámara.** En Linux, si la cámara está en la LAN, el bridge por defecto suele alcanzar. Si **Probar conexión** falla con una URL que sí anda en VLC, agregá `network_mode: host` al servicio `backend`.
 
 ### GPU (opcional)
 
@@ -167,8 +164,9 @@ y agregá al servicio `backend`:
 | `ALERT_COOLDOWN_S` | `300` | tiempo mínimo entre alertas del mismo tipo |
 | `TIMEZONE` | `America/Argentina/Buenos_Aires` | zona horaria para agrupar por hora y día |
 | `SEED_DEMO_HISTORY` | `true` | siembra historial sólo en modo simulado |
+| `ADMIN_PASSWORD` | vacío | clave para la sección Configuración |
 
-La lista completa está en `backend/app/config.py`.
+La lista completa está en `backend/app/config.py`. Las variables de cámara y reglas son sólo el valor inicial: después mandan los cambios hechos en la web.
 
 ### Índice de acumulación (0-100)
 
@@ -194,6 +192,11 @@ El índice se suaviza con una media exponencial (τ = 3 s). Los niveles son: `<3
 | GET | `/api/alerts?hours=24&only_open=true` | alertas |
 | POST | `/api/alerts/{id}/ack` | marcar alerta como vista |
 | GET/POST/PUT/DELETE | `/api/config/zones` | ABM de zonas |
+| GET/PUT | `/api/config/camera` · `/api/config/rules` | configuración de cámara y reglas |
+| POST | `/api/config/camera/test` | prueba de conexión (devuelve un cuadro JPEG) |
+| GET/POST/DELETE | `/api/config/videos` | videos de prueba (subida multipart) |
+| GET · POST | `/api/config/data/stats` · `/api/config/data/purge-simulated` | datos almacenados y borrado de demo |
+| GET | `/api/metrics/export.csv?days=30&bucket=1h` | exportación a Excel |
 | GET | `/api/config/system` | estado del worker, DB, Redis y reglas |
 | GET | `/api/stream/mjpeg` · `/api/stream/snapshot.jpg` | video del último cuadro |
 
